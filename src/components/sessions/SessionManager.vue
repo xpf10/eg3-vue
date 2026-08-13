@@ -4,25 +4,25 @@
       <!-- Tabs -->
       <div class="flex border-b border-slate-800 font-semibold">
         <button
-          @click="activeTab = 'sessions'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'sessions' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+          @click="activeTab = 'sessions'"
         >
           <Save :size="14" />
           <span>Saved Sessions</span>
         </button>
         <button
-          @click="activeTab = 'bookmarks'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'bookmarks' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+          @click="activeTab = 'bookmarks'"
         >
           <BookmarkIcon :size="14" />
           <span>Bookmarks</span>
         </button>
         <button
-          @click="activeTab = 'import-export'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'import-export' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+          @click="activeTab = 'import-export'"
         >
           <FileJson :size="14" />
           <span>Import / Export JSON</span>
@@ -31,16 +31,24 @@
 
       <!-- Tab 1: Saved Sessions -->
       <div v-if="activeTab === 'sessions'" class="flex flex-col gap-3">
+        <div
+          v-if="sessionStore.persistError"
+          role="alert"
+          class="px-3 py-2 rounded-lg border text-xs font-medium bg-red-950/60 border-red-800 text-red-300"
+        >
+          {{ sessionStore.persistError }}
+        </div>
+
         <div class="flex items-center gap-2 bg-slate-800/60 p-2.5 rounded-lg border border-slate-700">
           <input
-            type="text"
             v-model="newSessionName"
+            type="text"
             placeholder="Enter session name..."
             class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 outline-none font-mono"
           />
           <button
-            @click="handleSaveSession"
             class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded shadow-sm transition-colors flex items-center gap-1 shrink-0"
+            @click="handleSaveSession"
           >
             <Plus :size="14" />
             <span>Save Current Session</span>
@@ -62,14 +70,14 @@
 
             <div class="flex items-center gap-2">
               <button
-                @click="sessionStore.loadSession(s.id); $emit('close')"
                 class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 font-semibold rounded transition-colors"
+                @click="sessionStore.loadSession(s.id); $emit('close')"
               >
                 Load
               </button>
               <button
-                @click="sessionStore.deleteSession(s.id)"
                 class="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                @click="sessionStore.deleteSession(s.id)"
               >
                 <Trash2 :size="14" />
               </button>
@@ -85,8 +93,8 @@
       <!-- Tab 2: Bookmarks -->
       <div v-else-if="activeTab === 'bookmarks'" class="flex flex-col gap-3">
         <button
-          @click="sessionStore.addBookmark()"
           class="self-start px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded shadow-sm transition-colors flex items-center gap-1"
+          @click="sessionStore.addBookmark()"
         >
           <Plus :size="14" />
           <span>Bookmark Current Locus</span>
@@ -105,14 +113,14 @@
 
             <div class="flex items-center gap-2">
               <button
-                @click="jumpToBookmark(bm); $emit('close')"
                 class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded transition-colors"
+                @click="jumpToBookmark(bm); $emit('close')"
               >
                 Jump
               </button>
               <button
-                @click="sessionStore.removeBookmark(bm.id)"
                 class="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                @click="sessionStore.removeBookmark(bm.id)"
               >
                 <Trash2 :size="14" />
               </button>
@@ -146,8 +154,8 @@
             class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-300 font-mono text-[11px] placeholder-slate-600"
           ></textarea>
           <button
-            @click="handleImport"
             class="mt-1 self-end px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded transition-colors"
+            @click="handleImport"
           >
             Import Session Data
           </button>
@@ -157,8 +165,8 @@
 
     <template #footer>
       <button
-        @click="$emit('close')"
         class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-medium transition-colors"
+        @click="$emit('close')"
       >
         Close
       </button>
@@ -189,8 +197,10 @@ const importInput = ref('')
 
 function handleSaveSession() {
   if (!newSessionName.value) return
-  sessionStore.saveCurrentSession(newSessionName.value)
-  newSessionName.value = ''
+  const saved = sessionStore.saveCurrentSession(newSessionName.value)
+  if (saved) {
+    newSessionName.value = ''
+  }
 }
 
 function jumpToBookmark(bm: Bookmark) {

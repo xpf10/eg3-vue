@@ -15,6 +15,10 @@
         @click.self="$emit('close')"
       >
         <div
+          ref="dialogRef"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="title || 'Dialog'"
           class="relative w-full max-w-2xl border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-colors duration-150"
           :class="themeStore.isDarkMode ? 'bg-slate-900 border-slate-700/80 text-slate-200' : 'bg-white border-slate-200 text-slate-900'"
         >
@@ -27,9 +31,12 @@
               <slot name="title">{{ title }}</slot>
             </h3>
             <button
-              @click="$emit('close')"
+              ref="closeBtnRef"
+              type="button"
+              aria-label="Close dialog"
               class="p-1 rounded-lg transition-colors"
               :class="themeStore.isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'"
+              @click="$emit('close')"
             >
               <X :size="20" />
             </button>
@@ -55,14 +62,62 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch, onBeforeUnmount, nextTick } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useThemeStore } from '../../stores/themeStore'
 
-defineProps<{
+const props = defineProps<{
   isOpen: boolean
   title?: string
 }>()
 
-defineEmits(['close'])
+const emit = defineEmits(['close'])
 const themeStore = useThemeStore()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const closeBtnRef = ref<HTMLButtonElement | null>(null)
+
+function handleKeydown(e: KeyboardEvent) {
+  if (!props.isOpen) return
+  if (e.key === 'Escape') {
+    emit('close')
+    return
+  }
+  if (e.key !== 'Tab') return
+
+  // Simple focus trap: keep Tab cycling inside the dialog.
+  const el = dialogRef.value
+  if (!el) return
+  const focusables = Array.from(
+    el.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+  ).filter(f => !f.hasAttribute('disabled'))
+  if (focusables.length === 0) return
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement
+  if (e.shiftKey && (active === first || active === el || !el.contains(active))) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && (active === last || !el.contains(active))) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+watch(
+  () => props.isOpen,
+  async open => {
+    if (open) {
+      document.addEventListener('keydown', handleKeydown)
+      await nextTick()
+      closeBtnRef.value?.focus()
+    } else {
+      document.removeEventListener('keydown', handleKeydown)
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 </script>

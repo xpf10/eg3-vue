@@ -13,7 +13,6 @@ export const useGenomeStore = defineStore('genome', () => {
     start: 27053397,
     end: 27373765
   })
-  const windowWidth = ref<number>(1200)
 
   // Navigation History stack
   const history = ref<GenomicRegion[]>([])
@@ -50,7 +49,7 @@ export const useGenomeStore = defineStore('genome', () => {
   }
 
   function setRegion(newRegion: GenomicRegion | string, record = true) {
-    let target: GenomicRegion | null = null
+    let target: GenomicRegion | null
     if (typeof newRegion === 'string') {
       target = parseGenomicRegion(newRegion, viewRegion.value.chr)
     } else {
@@ -216,7 +215,6 @@ export const useGenomeStore = defineStore('genome', () => {
   return {
     currentGenome,
     viewRegion,
-    windowWidth,
     allGenomes: ALL_GENOMES,
     regionString,
     regionSpan,

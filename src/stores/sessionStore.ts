@@ -1,14 +1,49 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { Session, Bookmark } from '../types/session'
+import { Track } from '../types/track'
 import { useGenomeStore } from './genomeStore'
 import { useTrackStore } from './trackStore'
-import { formatGenomicRegion } from '../types/region'
+
+/**
+ * A session may only contain JSON-serializable data.  Non-serializable track
+ * payloads (`bwInstance`, `rawContent` ArrayBuffers) are stripped here; remote
+ * BigWig URLs are marked `loadStatus: undefined` so the renderer lazily
+ * reconnects them on load.
+ *
+ * Local-only payloads that cannot be restored (local BigWig/BAM/VCF binary
+ * content) are marked `simulated` so the UI shows the honest badge instead of
+ * silently drawing fake data.
+ */
+export function serializeTracks(tracks: Track[]): Track[] {
+  return tracks.map(t => {
+    const copy: Track = {
+      ...t,
+      bwInstance: undefined,
+      rawContent: undefined
+    }
+
+    if (t.url && t.url.startsWith('local://')) {
+      if (copy.items && Array.isArray(copy.items) && copy.items.length > 0) {
+        copy.loadStatus = 'ok' // parsed BED/GFF items survive JSON round-trip
+      } else {
+        copy.loadStatus = 'simulated' // binary local payloads are not restorable
+      }
+    } else {
+      // Remote track: drop the status so the renderer reconnects (BigWig) or
+      // falls back to an honest simulated badge (BAM/VCF/… without a parser).
+      copy.loadStatus = undefined
+    }
+    return copy
+  })
+}
 
 export const useSessionStore = defineStore('session', () => {
   const sessions = ref<Session[]>([])
   const bookmarks = ref<Bookmark[]>([])
   const currentSessionId = ref<string | null>(null)
+  /** Last localStorage write failure (e.g. quota exceeded), surfaced in the UI. */
+  const persistError = ref<string | null>(null)
 
   // Initialize from LocalStorage if available
   try {
@@ -22,18 +57,26 @@ export const useSessionStore = defineStore('session', () => {
     }
   } catch (e) {
     console.warn('LocalStorage not available', e)
+    persistError.value = 'LocalStorage is not available — sessions will not persist across reloads.'
   }
 
-  function persist() {
+  function persist(): boolean {
     try {
       localStorage.setItem('eg3_vue_sessions', JSON.stringify(sessions.value))
       localStorage.setItem('eg3_vue_bookmarks', JSON.stringify(bookmarks.value))
+      persistError.value = null
+      return true
     } catch (e) {
+      const msg = e instanceof DOMException && e.name === 'QuotaExceededError'
+        ? 'Storage quota exceeded — the session contains too much data to save locally. Remove old sessions or export to JSON instead.'
+        : `Failed to save to localStorage: ${e instanceof Error ? e.message : String(e)}`
       console.warn('Failed to save to localStorage', e)
+      persistError.value = msg
+      return false
     }
   }
 
-  function saveCurrentSession(name: string, description?: string): Session {
+  function saveCurrentSession(name: string, description?: string): Session | null {
     const genomeStore = useGenomeStore()
     const trackStore = useTrackStore()
 
@@ -44,13 +87,18 @@ export const useSessionStore = defineStore('session', () => {
       updatedAt: new Date().toISOString(),
       genomeName: genomeStore.currentGenome.name,
       viewRegion: { ...genomeStore.viewRegion },
-      tracks: JSON.parse(JSON.stringify(trackStore.tracks)),
+      tracks: serializeTracks(trackStore.tracks),
       description
     }
 
     sessions.value.unshift(newSession)
     currentSessionId.value = newSession.id
-    persist()
+    if (!persist()) {
+      // Roll back the in-memory entry so the UI does not show a session that
+      // never made it to disk.
+      sessions.value = sessions.value.filter(s => s.id !== newSession.id)
+      return null
+    }
     return newSession
   }
 
@@ -63,7 +111,9 @@ export const useSessionStore = defineStore('session', () => {
 
     genomeStore.setGenome(session.genomeName)
     genomeStore.setRegion(session.viewRegion)
-    trackStore.tracks = JSON.parse(JSON.stringify(session.tracks))
+    // serializeTracks normalises statuses so remote BigWigs reconnect lazily
+    // and un-restorable local payloads show the simulated badge.
+    trackStore.tracks = serializeTracks(JSON.parse(JSON.stringify(session.tracks)))
 
     currentSessionId.value = session.id
     return true
@@ -86,7 +136,7 @@ export const useSessionStore = defineStore('session', () => {
       exportedAt: new Date().toISOString(),
       genomeName: genomeStore.currentGenome.name,
       viewRegion: genomeStore.viewRegion,
-      tracks: trackStore.tracks
+      tracks: serializeTracks(trackStore.tracks)
     }
     return JSON.stringify(exportData, null, 2)
   }
@@ -102,7 +152,7 @@ export const useSessionStore = defineStore('session', () => {
 
       genomeStore.setGenome(data.genomeName)
       genomeStore.setRegion(data.viewRegion)
-      trackStore.tracks = data.tracks
+      trackStore.tracks = serializeTracks(data.tracks as Track[])
       return true
     } catch (e) {
       console.error('Import failed', e)
@@ -135,6 +185,7 @@ export const useSessionStore = defineStore('session', () => {
     sessions,
     bookmarks,
     currentSessionId,
+    persistError,
     saveCurrentSession,
     loadSession,
     deleteSession,

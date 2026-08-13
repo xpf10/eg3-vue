@@ -16,7 +16,6 @@ export interface SvgExportOpts {
   height: number  // CSS px
 }
 
-const HEADER_H = 40
 const FOOTER_H = 22
 
 export function buildSvg(opts: SvgExportOpts): string {

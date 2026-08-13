@@ -29,8 +29,8 @@
       >
         <span>Track hidden</span>
         <button
-          @click="trackStore.toggleTrackVisibility(track.id)"
           class="text-cyan-500 hover:underline text-[11px]"
+          @click="trackStore.toggleTrackVisibility(track.id)"
         >
           Show Track
         </button>
@@ -53,8 +53,8 @@
         </p>
       </div>
       <button
-        @click="$emit('open-add-modal')"
         class="mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg shadow-md transition-colors flex items-center gap-2"
+        @click="$emit('open-add-modal')"
       >
         <Plus :size="16" />
         <span>Add Genomic Track</span>

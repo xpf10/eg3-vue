@@ -5,19 +5,19 @@
   >
     <!-- Zoom In buttons -->
     <button
-      @click="genomeStore.zoomIn(2)"
       title="Zoom In 2x"
       class="p-1.5 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-700 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.zoomIn(2)"
     >
       <ZoomIn :size="14" />
       <span>2x</span>
     </button>
     <button
-      @click="genomeStore.zoomIn(5)"
       title="Zoom In 5x"
       class="px-1.5 py-1 rounded text-[11px] font-mono transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-400 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-500 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.zoomIn(5)"
     >
       5x
     </button>
@@ -26,19 +26,19 @@
 
     <!-- Zoom Out buttons -->
     <button
-      @click="genomeStore.zoomOut(2)"
       title="Zoom Out 2x"
       class="p-1.5 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-700 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.zoomOut(2)"
     >
       <ZoomOut :size="14" />
       <span>2x</span>
     </button>
     <button
-      @click="genomeStore.zoomOut(5)"
       title="Zoom Out 5x"
       class="px-1.5 py-1 rounded text-[11px] font-mono transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-400 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-500 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.zoomOut(5)"
     >
       5x
     </button>
@@ -47,18 +47,18 @@
 
     <!-- Pan Left / Right -->
     <button
-      @click="genomeStore.panLeft(0.25)"
       title="Shift Left (25%)"
       class="p-1.5 rounded transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-700 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.panLeft(0.25)"
     >
       <ArrowLeft :size="14" />
     </button>
     <button
-      @click="genomeStore.panRight(0.25)"
       title="Shift Right (25%)"
       class="p-1.5 rounded transition-colors"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-cyan-400' : 'text-slate-700 hover:bg-slate-100 hover:text-cyan-700'"
+      @click="genomeStore.panRight(0.25)"
     >
       <ArrowRight :size="14" />
     </button>
@@ -67,20 +67,20 @@
 
     <!-- Undo / Redo -->
     <button
-      @click="genomeStore.undo()"
       :disabled="!genomeStore.canUndo()"
       title="Undo Navigation"
       class="p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'"
+      @click="genomeStore.undo()"
     >
       <Undo2 :size="14" />
     </button>
     <button
-      @click="genomeStore.redo()"
       :disabled="!genomeStore.canRedo()"
       title="Redo Navigation"
       class="p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
       :class="themeStore.isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'"
+      @click="genomeStore.redo()"
     >
       <Redo2 :size="14" />
     </button>

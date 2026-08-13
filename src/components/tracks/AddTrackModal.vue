@@ -4,27 +4,27 @@
       <!-- Tabs Header -->
       <div class="flex border-b text-xs font-semibold" :class="themeStore.isDarkMode ? 'border-slate-800' : 'border-slate-200'">
         <button
-          @click="activeTab = 'catalog'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'catalog' ? 'border-cyan-500 text-cyan-500 font-bold' : (themeStore.isDarkMode ? 'border-transparent text-slate-400 hover:text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-800')"
+          @click="activeTab = 'catalog'"
         >
           <Compass :size="14" />
           <span>Predefined Catalog</span>
         </button>
 
         <button
-          @click="activeTab = 'local'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'local' ? 'border-cyan-500 text-cyan-500 font-bold' : (themeStore.isDarkMode ? 'border-transparent text-slate-400 hover:text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-800')"
+          @click="activeTab = 'local'"
         >
           <UploadCloud :size="14" />
           <span>Upload Local File</span>
         </button>
 
         <button
-          @click="activeTab = 'custom'"
           class="px-4 py-2 border-b-2 transition-colors flex items-center gap-2"
           :class="activeTab === 'custom' ? 'border-cyan-500 text-cyan-500 font-bold' : (themeStore.isDarkMode ? 'border-transparent text-slate-400 hover:text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-800')"
+          @click="activeTab = 'custom'"
         >
           <Link :size="14" />
           <span>Custom Track URL</span>
@@ -60,8 +60,8 @@
             </div>
 
             <button
-              @click="addCatalogTrack(catTrack)"
               class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs rounded-md shadow-sm transition-colors flex items-center gap-1 shrink-0"
+              @click="addCatalogTrack(catTrack)"
             >
               <Plus :size="14" />
               <span>Add</span>
@@ -78,16 +78,16 @@
 
         <!-- Drop Zone Container -->
         <div
-          @dragover.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @drop.prevent="handleFileDrop"
-          @click="triggerFileInput"
           class="border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-150 gap-2"
           :class="[
             isDragging
               ? 'border-cyan-500 bg-cyan-500/10'
               : (themeStore.isDarkMode ? 'border-slate-700 bg-slate-800/40 hover:border-slate-600' : 'border-slate-300 bg-slate-50 hover:border-slate-400')
           ]"
+          @dragover.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @drop.prevent="handleFileDrop"
+          @click="triggerFileInput"
         >
           <input
             ref="fileInputRef"
@@ -132,8 +132,8 @@
             <div class="flex flex-col gap-1">
               <label class="font-semibold" :class="themeStore.isDarkMode ? 'text-slate-300' : 'text-slate-700'">Track Name Label</label>
               <input
-                type="text"
                 v-model="localCustomName"
+                type="text"
                 class="border rounded-md p-1.5 outline-none font-mono"
                 :class="themeStore.isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'"
               />
@@ -141,8 +141,8 @@
             <div class="flex flex-col gap-1">
               <label class="font-semibold" :class="themeStore.isDarkMode ? 'text-slate-300' : 'text-slate-700'">Track Display Color</label>
               <input
-                type="color"
                 v-model="localCustomColor"
+                type="color"
                 class="w-full h-8 rounded bg-transparent cursor-pointer p-0.5"
               />
             </div>
@@ -171,8 +171,8 @@
         <div class="flex flex-col gap-1">
           <label class="font-semibold" :class="themeStore.isDarkMode ? 'text-slate-300' : 'text-slate-700'">Track Label Name</label>
           <input
-            type="text"
             v-model="customForm.name"
+            type="text"
             placeholder="e.g. My Custom RNA-seq Track"
             class="border rounded-lg p-2 outline-none font-mono placeholder-slate-500"
             :class="themeStore.isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'"
@@ -182,9 +182,9 @@
         <div class="flex flex-col gap-1">
           <label class="font-semibold" :class="themeStore.isDarkMode ? 'text-slate-300' : 'text-slate-700'">Data Source URL (.bw, .bed, .bam, .hic, .vcf)</label>
           <input
-            type="text"
             v-model="customForm.url"
-            placeholder="http://10.1.20.6:8080/chipseq/ENCSR296JFK/ENCFF501MDH.bigWig"
+            type="text"
+            placeholder="https://example.org/path/track.bigWig"
             class="border rounded-lg p-2 outline-none font-mono placeholder-slate-500"
             :class="themeStore.isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'"
           />
@@ -193,35 +193,42 @@
         <div class="flex items-center gap-3">
           <label class="font-semibold" :class="themeStore.isDarkMode ? 'text-slate-300' : 'text-slate-700'">Initial Color:</label>
           <input
-            type="color"
             v-model="customForm.color"
+            type="color"
             class="w-8 h-8 rounded bg-transparent cursor-pointer p-0.5"
           />
         </div>
       </div>
     </div>
 
+    <div
+v-if="errorMessage" role="alert" class="px-3 py-2 rounded-lg border text-xs font-medium flex items-start gap-2 transition-colors"
+      :class="themeStore.isDarkMode ? 'bg-red-950/60 border-red-800 text-red-300' : 'bg-red-50 border-red-300 text-red-700'">
+      <AlertTriangle :size="14" class="shrink-0 mt-0.5" />
+      <span>{{ errorMessage }}</span>
+    </div>
+
     <template #footer>
       <button
-        @click="$emit('close')"
         class="px-4 py-2 rounded-lg font-medium transition-colors"
         :class="themeStore.isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-slate-200 hover:bg-slate-300 text-slate-800'"
+        @click="$emit('close')"
       >
         Cancel
       </button>
 
       <button
         v-if="activeTab === 'local' && localResult"
-        @click="addLocalTrack"
         class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors"
+        @click="addLocalTrack"
       >
         Load Local File Track
       </button>
 
       <button
         v-if="activeTab === 'custom'"
-        @click="submitCustomTrack"
         class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors"
+        @click="submitCustomTrack"
       >
         Add Custom Track URL
       </button>
@@ -231,7 +238,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { Compass, UploadCloud, Link, Plus, FileCode, CheckCircle } from 'lucide-vue-next'
+import { Compass, UploadCloud, Link, Plus, FileCode, CheckCircle, AlertTriangle } from 'lucide-vue-next'
 import Modal from '../ui/Modal.vue'
 import { Track, TrackType } from '../../types/track'
 import { useTrackStore } from '../../stores/trackStore'
@@ -255,6 +262,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const localResult = ref<LocalFileParseResult | null>(null)
 const localCustomName = ref('')
 const localCustomColor = ref('#38bdf8')
+const errorMessage = ref('')
 
 const customForm = reactive({
   type: 'bigwig' as TrackType,
@@ -285,16 +293,23 @@ async function handleFileDrop(e: DragEvent) {
 }
 
 async function processFile(file: File) {
-  const result = await LocalFileLoader.parseFile(file)
-  localResult.value = result
-  localCustomName.value = result.trackName
-  localCustomColor.value = '#38bdf8'
+  try {
+    const result = await LocalFileLoader.parseFile(file)
+    localResult.value = result
+    localCustomName.value = result.trackName
+    localCustomColor.value = '#38bdf8'
 
-  if (file.name.toLowerCase().endsWith('.json') && typeof result.rawContent === 'string') {
-    const success = sessionStore.importSessionJSON(result.rawContent)
-    if (success) {
-      emit('close')
+    if (file.name.toLowerCase().endsWith('.json') && typeof result.rawContent === 'string') {
+      const success = sessionStore.importSessionJSON(result.rawContent)
+      if (success) {
+        emit('close')
+      } else {
+        errorMessage.value = 'Failed to import session file: invalid format'
+      }
     }
+  } catch (err) {
+    console.error('Failed to parse local file:', err)
+    errorMessage.value = `Failed to parse file: ${err instanceof Error ? err.message : String(err)}`
   }
 }
 
@@ -316,17 +331,39 @@ function addCatalogTrack(t: Track) {
 }
 
 async function submitCustomTrack() {
-  if (!customForm.url) return
-  const trackName = customForm.name || customForm.url.split('/').pop() || 'Remote Track'
-  const track = await LocalFileLoader.createRemoteTrack(
-    customForm.url,
-    trackName,
-    customForm.type,
-    customForm.color
-  )
-  trackStore.addTrack(track)
-  customForm.name = ''
-  customForm.url = ''
-  emit('close')
+  if (!customForm.url) {
+    errorMessage.value = 'Please enter a data source URL'
+    return
+  }
+
+  let url: string
+  try {
+    url = new URL(customForm.url.trim()).href
+  } catch {
+    errorMessage.value = 'Invalid URL — expected e.g. https://host/path/file.bigWig'
+    return
+  }
+
+  errorMessage.value = ''
+  const trackName = customForm.name || url.split('/').pop() || 'Remote Track'
+  try {
+    const track = await LocalFileLoader.createRemoteTrack(
+      url,
+      trackName,
+      customForm.type,
+      customForm.color
+    )
+    if (track.loadStatus === 'failed') {
+      errorMessage.value = `Could not reach ${url} — track will NOT be added. Check the URL and network access (the server must support HTTP Range requests).`
+      return
+    }
+    trackStore.addTrack(track)
+    customForm.name = ''
+    customForm.url = ''
+    emit('close')
+  } catch (err) {
+    console.error('Failed to create remote track:', err)
+    errorMessage.value = `Failed to create track: ${err instanceof Error ? err.message : String(err)}`
+  }
 }
 </script>

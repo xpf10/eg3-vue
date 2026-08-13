@@ -3,7 +3,7 @@
     class="border-b h-7 relative select-none transition-colors duration-150"
     :class="themeStore.isDarkMode ? 'bg-slate-900/95 border-slate-800' : 'bg-slate-100/95 border-slate-200'"
   >
-    <canvas ref="canvasRef" class="w-full h-full block"></canvas>
+    <canvas ref="canvasRef" role="img" aria-label="Genomic coordinate ruler" class="w-full h-full block"></canvas>
   </div>
 </template>
 

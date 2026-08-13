@@ -36,10 +36,12 @@
     <div class="flex items-center gap-2">
       <!-- Daytime / Dark Mode Toggle Button -->
       <button
-        @click="themeStore.toggleTheme()"
+        type="button"
         :title="themeStore.isDarkMode ? 'Switch to Daytime Light Mode' : 'Switch to Dark Mode'"
+        :aria-label="themeStore.isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'"
         class="p-1.5 rounded-lg border transition-colors flex items-center gap-1 text-xs font-medium"
         :class="themeStore.isDarkMode ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200'"
+        @click="themeStore.toggleTheme()"
       >
         <Sun v-if="themeStore.isDarkMode" :size="16" />
         <Moon v-else :size="16" />
@@ -48,8 +50,9 @@
 
       <!-- Add Tracks Button -->
       <button
-        @click="$emit('open-add-tracks')"
+        type="button"
         class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+        @click="$emit('open-add-tracks')"
       >
         <Plus :size="15" />
         <span class="hidden sm:inline">Add Tracks</span>
@@ -57,20 +60,24 @@
 
       <!-- Metadata Matrix Facets -->
       <button
-        @click="$emit('open-facets')"
+        type="button"
         title="Metadata Matrix"
+        aria-label="Open metadata facet table"
         class="p-1.5 rounded-lg border transition-colors"
         :class="themeStore.isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'"
+        @click="$emit('open-facets')"
       >
         <SlidersHorizontal :size="16" />
       </button>
 
       <!-- Session Manager -->
       <button
-        @click="$emit('open-sessions')"
+        type="button"
         title="Sessions & Bookmarks"
+        aria-label="Open session manager"
         class="p-1.5 rounded-lg border transition-colors"
         :class="themeStore.isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'"
+        @click="$emit('open-sessions')"
       >
         <FolderOpen :size="16" />
       </button>
@@ -78,9 +85,9 @@
       <!-- Export Dropdown -->
       <div ref="exportMenuRef" class="relative">
         <button
-          @click="toggleExportMenu"
-          @keydown.escape="closeExportMenu"
+          type="button"
           :aria-expanded="showExportMenu"
+          :aria-label="'Export browser view'"
           title="Export"
           class="p-1.5 rounded-lg border transition-colors flex items-center gap-1"
           :class="[
@@ -89,6 +96,8 @@
               : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200',
             showExportMenu ? 'ring-2 ring-cyan-500/50' : ''
           ]"
+          @click="toggleExportMenu"
+          @keydown.escape="closeExportMenu"
         >
           <Download :size="16" />
           <ChevronDown :size="12" />
@@ -98,12 +107,12 @@
           <div
             v-if="showExportMenu"
             ref="exportMenuEl"
-            @click="closeExportMenu"
             class="fixed z-[60] mt-1 mr-1 w-56 rounded-xl border shadow-2xl overflow-hidden backdrop-blur-sm"
             :class="themeStore.isDarkMode
               ? 'bg-slate-800/95 border-slate-700 text-slate-200'
               : 'bg-white/98 border-slate-200 text-slate-800'"
             :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+            @click="closeExportMenu"
           >
             <div
               class="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider"
@@ -112,33 +121,33 @@
               Export
             </div>
             <button
-              @click="$emit('export:summary')"
               class="w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2 hover:bg-cyan-600/10"
+              @click="$emit('export:summary')"
             >
               <FileText :size="14" class="text-cyan-500" />
               <span>PDF Summary</span>
               <span class="ml-auto text-[9px] opacity-60 font-mono">.pdf</span>
             </button>
             <button
-              @click="$emit('export:view-pdf')"
               class="w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2 hover:bg-cyan-600/10"
+              @click="$emit('export:view-pdf')"
             >
               <Camera :size="14" class="text-teal-500" />
               <span>PDF View</span>
               <span class="ml-auto text-[9px] opacity-60 font-mono">.pdf</span>
             </button>
             <button
-              @click="$emit('export:view-svg')"
               class="w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2 hover:bg-cyan-600/10"
+              @click="$emit('export:view-svg')"
             >
               <Image :size="14" class="text-indigo-500" />
               <span>SVG View</span>
               <span class="ml-auto text-[9px] opacity-60 font-mono">.svg</span>
             </button>
             <button
-              @click="$emit('export:view-png')"
               class="w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2 hover:bg-cyan-600/10 border-t"
               :class="themeStore.isDarkMode ? 'border-slate-700' : 'border-slate-200'"
+              @click="$emit('export:view-png')"
             >
               <Image :size="14" class="text-emerald-500" />
               <span>PNG View</span>

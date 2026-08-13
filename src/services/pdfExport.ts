@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { GenomicRegion, formatGenomicRegion } from '../types/region'
 import { Track } from '../types/track'
+import { computePdfLayout } from './pdfLayout'
 
 /**
  * PDF export surface.
@@ -126,20 +127,13 @@ export class PDFExporter {
       const totalW = img.width
       const totalH = img.height
 
-      // Scale the image so it fills the usable page width, then compute how
-      // many source-pixel-rows fit in the usable page height at that scale.
-      const dstW = viewW
-      const dstH = viewHPerPage
-      const scaleX = dstW / totalW
-      const scaleY = dstH / totalH
-      const scale = Math.min(scaleX, scaleY) // keep aspect, fit both dims
-      const dstWUsed = totalW * scale
-      const dstHUsed = totalH * scale
-      const offsetX = marginL + (viewW - dstWUsed) / 2
+      // Always fill the usable page width (never shrink to fit both dims —
+      // the old `Math.min(scaleX, scaleY)` made srcPerPage ≥ totalH, so the
+      // pagination branch below was dead code and tall views always came out
+      // as one squashed page).
+      const layout = computePdfLayout(totalW, totalH, viewW, viewHPerPage)
+      const offsetX = marginL + (viewW - layout.dstWUsed) / 2
       const offsetY = topPad + headerH
-
-      // How many source-pixel rows per page at this scale?
-      const srcPerPage = totalH * (dstH / dstHUsed)
 
       function drawChrome(pageNo: number) {
         doc.setFillColor(15, 23, 42)
@@ -160,25 +154,20 @@ export class PDFExporter {
         doc.text(`p. ${pageNo}  |  ${footerText}`, pageW - marginR, pageH - 3, { align: 'right' })
       }
 
-      const pages = Math.ceil(totalH / srcPerPage)
       const chunkCanvas = document.createElement('canvas')
 
-      for (let p = 0; p < pages; p++) {
-        const srcY = Math.floor(p * srcPerPage)
-        const srcH = Math.min(Math.ceil(srcPerPage), totalH - srcY)
-        const dstHChunk = (srcH / totalH) * dstHUsed
-
+      layout.slices.forEach((slice, p) => {
         chunkCanvas.width = totalW
-        chunkCanvas.height = srcH
+        chunkCanvas.height = slice.srcH
         const cctx = chunkCanvas.getContext('2d')!
-        cctx.drawImage(img, 0, srcY, totalW, srcH, 0, 0, totalW, srcH)
+        cctx.drawImage(img, 0, slice.srcY, totalW, slice.srcH, 0, 0, totalW, slice.srcH)
 
         if (p > 0) doc.addPage()
         drawChrome(p + 1)
 
         const imgDataUrl = chunkCanvas.toDataURL('image/png')
-        doc.addImage(imgDataUrl, 'PNG', offsetX, offsetY, dstWUsed, dstHChunk)
-      }
+        doc.addImage(imgDataUrl, 'PNG', offsetX, offsetY, layout.dstWUsed, slice.dstH)
+      })
 
       doc.save(`epigenome_browser_${genomeName}_${region.chr}_${region.start}_view.pdf`)
     }

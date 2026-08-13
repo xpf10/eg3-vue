@@ -1,21 +1,21 @@
 <template>
-  <div class="relative flex-1 max-w-md" ref="searchContainerRef">
+  <div ref="searchContainerRef" class="relative flex-1 max-w-md">
     <div class="relative flex items-center">
       <Search :size="16" class="absolute left-3 text-slate-400" />
       <input
-        type="text"
         v-model="inputQuery"
-        @keydown.enter="handleSearch"
-        @focus="handleFocus"
+        type="text"
         placeholder="Search gene (e.g. TP53, BRCA1, HOXA1) or locus (e.g. chr7:27053397-27373765)"
         class="w-full border focus:ring-1 focus:ring-cyan-500 rounded-lg pl-9 pr-20 py-1.5 text-xs font-mono transition-all shadow-sm"
         :class="themeStore.isDarkMode
           ? 'bg-slate-900/90 border-slate-700/80 focus:border-cyan-500 text-slate-100 placeholder-slate-500'
           : 'bg-white border-slate-300 focus:border-cyan-600 text-slate-900 placeholder-slate-400'"
+        @keydown.enter="handleSearch"
+        @focus="handleFocus"
       />
       <button
-        @click="handleSearch"
         class="absolute right-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-medium transition-colors flex items-center gap-1 shadow-sm"
+        @click="handleSearch"
       >
         <span v-if="isLoading" class="animate-spin w-3 h-3 border-2 border-white border-t-transparent rounded-full"></span>
         <span v-else>Go</span>
@@ -39,11 +39,11 @@
         <div
           v-for="gene in suggestions"
           :key="`${gene.name}-${gene.chr}-${gene.start}`"
-          @mousedown.stop.prevent="selectGene(gene)"
           class="w-full text-left px-3 py-2 flex items-center justify-between cursor-pointer text-xs transition-colors border-b last:border-0"
           :class="themeStore.isDarkMode
             ? 'hover:bg-cyan-500/10 border-slate-800/50'
             : 'hover:bg-slate-50 border-slate-100'"
+          @mousedown.stop.prevent="selectGene(gene)"
         >
           <div>
             <span class="font-bold font-mono" :class="themeStore.isDarkMode ? 'text-cyan-400' : 'text-cyan-700'">{{ gene.name }}</span>

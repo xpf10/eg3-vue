@@ -72,7 +72,6 @@ import SessionManager from './components/sessions/SessionManager.vue'
 import { useGenomeStore } from './stores/genomeStore'
 import { useTrackStore } from './stores/trackStore'
 import { useThemeStore } from './stores/themeStore'
-import { PDFExporter } from './services/pdfExport'
 import { downloadSvg, buildSvg, downloadPng } from './services/svgExport'
 import { compositeView } from './services/viewCapture'
 import { Track } from './types/track'
@@ -121,7 +120,10 @@ function buildSnapshot() {
   }
 }
 
-function doExportSummary() {
+async function doExportSummary() {
+  // jspdf (and its html2canvas/canvg/domexcept dependencies) are heavy; load
+  // them lazily so the initial bundle stays small.
+  const { PDFExporter } = await import('./services/pdfExport')
   PDFExporter.exportBrowserReport(
     genomeStore.currentGenome.name,
     genomeStore.viewRegion,
@@ -129,11 +131,12 @@ function doExportSummary() {
   )
 }
 
-function doExportViewPdf() {
+async function doExportViewPdf() {
   const snap = buildSnapshot()
   const { canvas } = compositeView(snap)
-  canvas.toBlob(blob => {
+  canvas.toBlob(async blob => {
     if (!blob) return
+    const { PDFExporter } = await import('./services/pdfExport')
     PDFExporter.exportViewAsPdf(blob, {
       genomeName: genomeStore.currentGenome.name,
       region: genomeStore.viewRegion,

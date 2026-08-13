@@ -4,7 +4,7 @@ export interface GenomicRegion {
   end: number
 }
 
-export function parseGenomicRegion(str: string, defaultChr = 'chr7', defaultSize = 1000000): GenomicRegion | null {
+export function parseGenomicRegion(str: string, _defaultChr = 'chr7', defaultSize = 1000000): GenomicRegion | null {
   if (!str) return null
   const cleaned = str.trim().replace(/,/g, '')
   

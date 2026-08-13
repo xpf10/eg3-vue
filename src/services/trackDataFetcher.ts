@@ -26,7 +26,7 @@ export interface RefGeneItem {
  * remaining parts as thinner UTR blocks.  When cdsStart === cdsEnd the
  * transcript has no CDS (lncRNA / pseudogene) and the whole exon is UTR.
  */
-function parseRefGeneExons(
+export function parseRefGeneExons(
   item: RefGeneItem
 ): { start: number; end: number; cdsStart?: number; cdsEnd?: number }[] {
   const starts = item.exonStarts ? item.exonStarts.split(',').filter(Boolean).map(Number) : []
@@ -109,7 +109,7 @@ export function isPrimaryChromosome(chr: string, genome: string): boolean {
  * Pick the best genomic_pos entry from a (possibly multi-entry) result.
  * Prefers a primary-chromosome entry; falls back to the first entry.
  */
-function pickBestPos(rawPos: any, genome = 'hg38'): any | null {
+export function pickBestPos(rawPos: any, genome = 'hg38'): any | null {
   if (rawPos && !Array.isArray(rawPos)) {
     return rawPos
   }

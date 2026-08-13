@@ -8,8 +8,35 @@ export type TrackType =
   | 'methylc'
   | 'vcf'
 
+/**
+ * Minimal structural shape of the @gmod/bbi `BigWig` instance we rely on.
+ *
+ * We deliberately do NOT use the `BigWig` class type here: `BBI` declares
+ * private/protected members, which makes it nominal.  Vue's `UnwrapRef`
+ * rewrites `Track` into a structural mapped type when it flows through
+ * `ref()`/Pinia, stripping those members — and the stripped type is no longer
+ * assignable to the nominal class type.  A structural interface keeps the
+ * store ↔ component ↔ renderer boundary type-safe.
+ */
+export interface BigWigLike {
+  getHeader(opts?: unknown): Promise<unknown>
+  getFeatures(refName: string, start: number, end: number, opts?: unknown): Promise<unknown[]>
+}
+
 export type DisplayMode = 'full' | 'dense' | 'pack' | 'squish'
 export type ScaleType = 'auto' | 'fixed' | 'log'
+
+/**
+ * Data-authenticity state of a track, surfaced to the user via canvas badges.
+ *
+ * - `ok`        — real data is attached (bwInstance / parsed items / fetched genes).
+ * - `pending`    — a connection/fetch is in flight (e.g. remote BigWig connect).
+ * - `failed`     — a remote data source could not be reached; no real data.
+ * - `simulated`  — the renderer is drawing the deterministic demo fallback
+ *                 (no real parser exists yet for this source).
+ * - `empty`      — the source was reached but contains nothing for this region.
+ */
+export type TrackLoadStatus = 'ok' | 'pending' | 'failed' | 'simulated' | 'empty'
 
 /**
  * Per-track override for the eg3-style FlankingStrategy used when
@@ -89,11 +116,12 @@ export interface Track {
   genome?: string
   querygenome?: string
   showOnHubLoad?: boolean
+  loadStatus?: TrackLoadStatus
   options: TrackOptions
   metadata?: TrackMetadata
   pinned?: boolean
   visible?: boolean
   items?: any[]
-  bwInstance?: any
-  rawContent?: any
+  bwInstance?: BigWigLike
+  rawContent?: string | ArrayBuffer
 }

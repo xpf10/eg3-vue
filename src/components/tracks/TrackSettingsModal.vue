@@ -20,16 +20,16 @@
           <input
             type="color"
             :value="track.options.color || '#38bdf8'"
-            @input="updateColor"
             class="w-9 h-9 rounded bg-slate-800 border border-slate-700 cursor-pointer outline-none p-0.5"
+            @input="updateColor"
           />
           <div class="flex items-center gap-1.5 flex-wrap">
             <button
               v-for="c in colorPresets"
               :key="c"
-              @click="trackStore.updateTrackOptions(track.id, { color: c })"
               class="w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110"
               :style="{ backgroundColor: c }"
+              @click="trackStore.updateTrackOptions(track.id, { color: c })"
             ></button>
           </div>
         </div>
@@ -47,8 +47,8 @@
           max="250"
           step="5"
           :value="track.options.height || 60"
-          @input="updateHeight"
           class="w-full accent-cyan-500 bg-slate-800 h-2 rounded cursor-pointer"
+          @input="updateHeight"
         />
       </div>
 
@@ -57,16 +57,16 @@
         <label class="font-semibold text-slate-300">Y-Axis Scale Mode</label>
         <div class="grid grid-cols-2 gap-2">
           <button
-            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'auto' })"
             class="px-3 py-2 rounded-lg border text-left font-medium transition-colors"
             :class="track.options.scaleType !== 'fixed' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'"
+            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'auto' })"
           >
             Auto Scale (Dynamic Peak)
           </button>
           <button
-            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'fixed', yMax: 10, yMin: 0 })"
             class="px-3 py-2 rounded-lg border text-left font-medium transition-colors"
             :class="track.options.scaleType === 'fixed' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'"
+            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'fixed', yMax: 10, yMin: 0 })"
           >
             Fixed Scale
           </button>
@@ -78,8 +78,8 @@
             <input
               type="number"
               :value="track.options.yMin ?? 0"
-              @input="updateYMin"
               class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono"
+              @input="updateYMin"
             />
           </div>
           <div class="flex items-center gap-2">
@@ -87,8 +87,8 @@
             <input
               type="number"
               :value="track.options.yMax ?? 10"
-              @input="updateYMax"
               class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono"
+              @input="updateYMax"
             />
           </div>
         </div>
@@ -101,11 +101,11 @@
           <button
             v-for="m in aggregateMethodOptions"
             :key="m"
-            @click="trackStore.updateTrackOptions(track.id, { aggregateMethod: m })"
             class="px-2 py-1.5 rounded-lg border text-left font-medium transition-colors text-[11px] uppercase"
             :class="track.options.aggregateMethod === m || (!track.options.aggregateMethod && m === 'mean')
               ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
               : 'bg-slate-800 border-slate-700 text-slate-400'"
+            @click="trackStore.updateTrackOptions(track.id, { aggregateMethod: m })"
           >
             {{ m }}
           </button>
@@ -124,8 +124,8 @@
           max="10"
           step="1"
           :value="track.options.smooth || 0"
-          @input="updateSmooth"
           class="w-full accent-cyan-500 bg-slate-800 h-2 rounded cursor-pointer"
+          @input="updateSmooth"
         />
         <span class="text-[10px] text-slate-500">0 = off, higher = more blur (moving average window)</span>
       </div>
@@ -137,11 +137,11 @@
           <button
             v-for="m in bigwigDisplayModeOptions"
             :key="m"
-            @click="trackStore.updateTrackOptions(track.id, { bigwigDisplayMode: m })"
             class="px-2 py-1.5 rounded-lg border text-left font-medium transition-colors text-[11px]"
             :class="track.options.bigwigDisplayMode === m || (!track.options.bigwigDisplayMode && m === 'auto')
               ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
               : 'bg-slate-800 border-slate-700 text-slate-400'"
+            @click="trackStore.updateTrackOptions(track.id, { bigwigDisplayMode: m })"
           >
             {{ m === 'auto' ? 'Auto (bar + heatmap)' : m }}
           </button>
@@ -156,8 +156,8 @@
             <input
               type="color"
               :value="track.options.colorAboveMax || '#ef4444'"
-              @input="updateColorAboveMax"
               class="w-7 h-7 rounded bg-slate-800 border border-slate-700 cursor-pointer outline-none p-0.5"
+              @input="updateColorAboveMax"
             />
             <span class="text-[11px] text-slate-400">Above Y-Max</span>
           </div>
@@ -165,8 +165,8 @@
             <input
               type="color"
               :value="track.options.color2BelowMin || '#16a34a'"
-              @input="updateColorBelowMin"
               class="w-7 h-7 rounded bg-slate-800 border border-slate-700 cursor-pointer outline-none p-0.5"
+              @input="updateColorBelowMin"
             />
             <span class="text-[11px] text-slate-400">Below Y-Min</span>
           </div>
@@ -178,8 +178,8 @@
         <label class="font-semibold text-slate-300">Display Density Mode</label>
         <select
           :value="track.options.displayMode || 'full'"
-          @change="updateDisplayMode"
           class="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono"
+          @change="updateDisplayMode"
         >
           <option value="full">Full (Expanded isoform/features)</option>
           <option value="dense">Dense (Collapsed single-line summary)</option>
@@ -191,8 +191,8 @@
 
     <template #footer>
       <button
-        @click="$emit('close')"
         class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-medium transition-colors"
+        @click="$emit('close')"
       >
         Done
       </button>

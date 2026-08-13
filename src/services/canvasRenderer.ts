@@ -1,9 +1,10 @@
-import { Track, AggregateMethod, BigWigDisplayMode } from '../types/track'
+import { Track, AggregateMethod, BigWigDisplayMode, TrackLoadStatus } from '../types/track'
 import { GenomicRegion } from '../types/region'
 import { SAMPLE_GENES, GeneInfo } from '../data/sampleGenes'
 import { fetchRealRefGeneData, normalizeGeneTrackName, ParsedGeneFeature } from './trackDataFetcher'
 import { LocalFileLoader, ParsedLocalBedItem } from './localFileLoader'
 import { FlankingStrategy, DEFAULT_FLANKING_STRATEGY } from '../models/FlankingStrategy'
+import { markRaw } from 'vue'
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D
@@ -81,6 +82,120 @@ const bwSignalCache = new Map<string, { start: number; end: number; score: numbe
 const inFlightFetches = new Set<string>()
 const fetchTimers = new Map<string, number>()
 const FETCH_DEBOUNCE_MS = 200
+
+/**
+ * Maximum number of entries kept in the signal/gene caches.  Cache keys are
+ * region-dependent (every zoom/pan produces new keys), so without a bound the
+ * module-level Maps would grow without limit during a long session.
+ */
+const CACHE_MAX_ENTRIES = 300
+
+/** LRU-ish insertion-order eviction for the module-level feature caches. */
+function evictCacheToLimit<T>(cache: Map<string, T>, max: number): void {
+  while (cache.size > max) {
+    const oldest = cache.keys().next()
+    if (oldest.done) break
+    cache.delete(oldest.value)
+  }
+}
+
+// One in-flight remote-connect per track id (prevents duplicate header
+// requests racing on every re-render while a connection is pending).
+const remoteConnectInFlight = new Set<string>()
+
+/**
+ * Lazily connect a remote BigWig URL on first render, so tracks added from the
+ * catalog (which carry a `url` but no `bwInstance`) display real signal when
+ * reachable — and an honest "LOAD FAILED" badge when they are not.
+ */
+async function connectRemoteBigWig(track: Track, onDone: () => void): Promise<void> {
+  if (!track.url || track.url.startsWith('local://')) return
+  if (track.bwInstance || track.loadStatus === 'ok' || track.loadStatus === 'failed') return
+  if (remoteConnectInFlight.has(track.id)) return
+  remoteConnectInFlight.add(track.id)
+  track.loadStatus = 'pending'
+  try {
+    const connected = await LocalFileLoader.tryConnectBigWig(track.url)
+    if (connected) {
+      track.bwInstance = markRaw(connected.bw)
+      track.loadStatus = 'ok'
+    } else {
+      track.loadStatus = 'failed'
+    }
+  } catch {
+    track.loadStatus = 'failed'
+  } finally {
+    remoteConnectInFlight.delete(track.id)
+    onDone()
+  }
+}
+
+/**
+ * Draw a small status pill (top-right) so the user can always tell whether the
+ * pixels on a track come from real data or from the deterministic fallback.
+ */
+function drawStatusBadge(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  isDarkMode: boolean,
+  kind: TrackLoadStatus | 'connecting',
+  message?: string
+): void {
+  let text: string
+  let bg: string
+  let fg: string
+  switch (kind) {
+    case 'failed':
+      text = message || 'LOAD FAILED'
+      bg = isDarkMode ? 'rgba(127,29,29,0.92)' : 'rgba(254,226,226,0.95)'
+      fg = isDarkMode ? '#fecaca' : '#b91c1c'
+      break
+    case 'connecting':
+      text = message || 'CONNECTING…'
+      bg = isDarkMode ? 'rgba(30,64,175,0.9)' : 'rgba(219,234,254,0.95)'
+      fg = isDarkMode ? '#bfdbfe' : '#1d4ed8'
+      break
+    case 'simulated':
+      text = message || 'SIMULATED DATA'
+      bg = isDarkMode ? 'rgba(120,53,15,0.85)' : 'rgba(254,243,199,0.95)'
+      fg = isDarkMode ? '#fde68a' : '#92400e'
+      break
+    case 'empty':
+      text = message || 'NO DATA IN REGION'
+      bg = isDarkMode ? 'rgba(51,65,85,0.9)' : 'rgba(226,232,240,0.95)'
+      fg = isDarkMode ? '#cbd5e1' : '#475569'
+      break
+    default:
+      return
+  }
+
+  ctx.save()
+  ctx.font = 'bold 9px Inter, sans-serif'
+  const padX = 6
+  const pillH = 14
+  const textW = ctx.measureText(text).width
+  const pillW = textW + padX * 2
+  const x = Math.max(2, width - pillW - 6)
+  const y = 2
+
+  ctx.fillStyle = bg
+  ctx.beginPath()
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, pillW, pillH, 4)
+  } else {
+    // Older browsers lack roundRect — fall back to a plain rounded-ish rect.
+    ctx.rect(x, y, pillW, pillH)
+  }
+  ctx.fill()
+  ctx.fillStyle = fg
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x + padX, y + pillH / 2 + 0.5)
+  ctx.restore()
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+}
 
 /**
  * Resolve the flanking strategy for a track.
@@ -232,12 +347,38 @@ export class CanvasTrackRenderer {
       } else {
         LocalFileLoader.getBigWigSignalFeatures(track.bwInstance, fetchRegion, width, downsample).then(features => {
           bwSignalCache.set(cacheKey, features || [])
+          evictCacheToLimit(bwSignalCache, CACHE_MAX_ENTRIES)
           if (onAsyncUpdate) onAsyncUpdate()
         })
       }
     }
 
-    // 2. Default unique seed-based BigWig rendering
+    // 2. No live BigWig instance: connect remote URLs lazily, and be honest
+    //    about the outcome (connecting / failed / simulated).
+    if (track.url && !track.url.startsWith('local://')) {
+      if (track.loadStatus === 'failed') {
+        drawStatusBadge(ctx, width, height, isDarkMode, 'failed')
+        ctx.fillStyle = isDarkMode ? '#f87171' : '#b91c1c'
+        ctx.font = '11px Inter, sans-serif'
+        ctx.fillText('Data source unreachable — check the URL and network', 6, Math.max(height / 2, 14))
+        return
+      }
+      if (track.loadStatus !== 'ok') {
+        if (track.loadStatus !== 'pending') {
+          void connectRemoteBigWig(track, () => {
+            if (onAsyncUpdate) onAsyncUpdate()
+          })
+        }
+        drawStatusBadge(ctx, width, height, isDarkMode, 'connecting')
+        ctx.fillStyle = isDarkMode ? '#93c5fd' : '#1d4ed8'
+        ctx.font = '11px Inter, sans-serif'
+        ctx.fillText('Connecting to remote data source…', 6, Math.max(height / 2, 14))
+        return
+      }
+    }
+
+    // 3. Deterministic fallback rendering (also reached by local files whose
+    //    binary header could not be parsed).
     const points: { x: number; y: number; val: number }[] = []
     const seed = getTrackSeed(track)
     const phaseShift = (seed % 1000) * 123.45
@@ -299,6 +440,15 @@ export class CanvasTrackRenderer {
     ctx.font = '10px Fira Code, monospace'
     ctx.fillText(`${maxScale.toFixed(1)} RPKM`, 6, 12)
     ctx.fillText('0', 6, height - 4)
+
+    drawStatusBadge(
+      ctx,
+      width,
+      height,
+      isDarkMode,
+      'simulated',
+      track.url?.startsWith('local://') ? 'SIMULATED — LOCAL FILE NOT PARSED' : undefined
+    )
   }
 
   private static renderRealBigWigFeatures(
@@ -500,7 +650,7 @@ export class CanvasTrackRenderer {
   }
 
   private static renderGeneAnnotation(rc: RenderContext) {
-    const { ctx, width, height, region, track, isDarkMode = true, onAsyncUpdate } = rc
+    const { ctx, width, height, region, track, isDarkMode = true } = rc
     const color = track.options.color || (isDarkMode ? '#38bdf8' : '#0284c7')
     const span = Math.max(1, region.end - region.start + 1)
 
@@ -716,7 +866,6 @@ export class CanvasTrackRenderer {
     isDarkMode: boolean,
     usableWidth: number
   ) {
-    const labelText = gene
     ctx.font = 'bold 10px Inter, sans-serif'
     const leftText = `${gene} ${strand}`
     const labelW = ctx.measureText(leftText).width + 6
@@ -816,13 +965,13 @@ export class CanvasTrackRenderer {
       const cached = realGeneCache.get(chunkKey)
       if (cached) cachedGenes.push(...cached)
       else allChunksFetched = false
-    }
-    const deduped = new Map<string, GeneInfo>()
+    }    const deduped = new Map<string, GeneInfo>()
     for (const g of cachedGenes) deduped.set(`${g.name}:${g.start}`, g)
     const genes = Array.from(deduped.values()).filter(
       g => g.end >= region.start && g.start <= region.end
     )
 
+    let usedSamplePreview = false
     if (!allChunksFetched) {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
@@ -837,6 +986,7 @@ export class CanvasTrackRenderer {
           fetchRealRefGeneData(genomeName, chunk, trackNameKey).then(realGenes => {
             inFlightFetches.delete(chunkKey)
             realGeneCache.set(chunkKey, realGenes)
+            evictCacheToLimit(realGeneCache, CACHE_MAX_ENTRIES)
             if (onAsyncUpdate) onAsyncUpdate()
           })
         }, FETCH_DEBOUNCE_MS))
@@ -845,14 +995,24 @@ export class CanvasTrackRenderer {
         genes.push(...SAMPLE_GENES.filter(
           g => g.chr === region.chr && g.end >= region.start && g.start <= region.end
         ))
+        usedSamplePreview = genes.length > 0
       }
     }
 
     if (genes.length === 0) {
       ctx.fillStyle = isDarkMode ? '#64748b' : '#94a3b8'
       ctx.font = '11px Inter, sans-serif'
-      ctx.fillText('Loading gene annotations...', 8, Math.max(height / 2, 14))
+      if (allChunksFetched) {
+        ctx.fillText('No gene annotations found in this region', 8, Math.max(height / 2, 14))
+        drawStatusBadge(ctx, width, height, isDarkMode, 'empty')
+      } else {
+        ctx.fillText('Loading gene annotations…', 8, Math.max(height / 2, 14))
+      }
       return
+    }
+
+    if (usedSamplePreview) {
+      drawStatusBadge(ctx, width, height, isDarkMode, 'connecting', 'SAMPLE PREVIEW — LOADING LIVE ANNOTATIONS…')
     }
 
     const displayMode = track.options.displayMode || 'full'
@@ -1030,6 +1190,7 @@ export class CanvasTrackRenderer {
         const x2 = ((bEnd - region.start) / span) * width
         ctx.fillRect(x1, yMid - 4, Math.max(2, x2 - x1), 8)
       }
+      drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — NO BED ITEMS')
       return
     }
 
@@ -1091,8 +1252,9 @@ export class CanvasTrackRenderer {
     if (track.url?.startsWith('local://')) {
       ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
       ctx.font = '10px Inter, sans-serif'
-      ctx.fillText('📁 Local Track File', width - 130, 14)
+      ctx.fillText('Local Track File', width - 130, 14)
     }
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — NO BED ITEMS')
   }
 
   private static renderBam({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
@@ -1141,7 +1303,8 @@ export class CanvasTrackRenderer {
 
     ctx.fillStyle = isDarkMode ? '#94a3b8' : '#475569'
     ctx.font = '10px Inter, sans-serif'
-    ctx.fillText(track.url?.startsWith('local://') ? '📁 Local BAM Coverage & Alignments' : 'Coverage & Read Alignments', 6, 16)
+    ctx.fillText('Read alignments', 6, 16)
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — NO BAM PARSER YET')
   }
 
   private static renderHiC({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
@@ -1173,12 +1336,12 @@ export class CanvasTrackRenderer {
     ctx.fillStyle = isDarkMode ? '#a78bfa' : '#6d28d9'
     ctx.font = '10px Inter, sans-serif'
     ctx.fillText('Chromatin Conformation Arc View', 6, 14)
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — Hi-C NOT IMPLEMENTED')
   }
 
   private static renderSynteny({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
     const color1 = track.options.color || (isDarkMode ? '#38bdf8' : '#0284c7')
     const color2 = track.options.secondaryColor || '#f97316'
-    const span = Math.max(1, region.end - region.start + 1)
     const seed = getTrackSeed(track)
 
     ctx.fillStyle = color1
@@ -1212,11 +1375,12 @@ export class CanvasTrackRenderer {
       ctx.lineWidth = 0.5
       ctx.stroke()
     }
+
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — ALIGNMENT NOT IMPLEMENTED')
   }
 
   private static renderMethylC({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
     const color = track.options.color || (isDarkMode ? '#ef4444' : '#dc2626')
-    const span = Math.max(1, region.end - region.start + 1)
     const seed = getTrackSeed(track)
     const siteCount = Math.min(width / 6, 120)
 
@@ -1232,6 +1396,7 @@ export class CanvasTrackRenderer {
     ctx.fillStyle = isDarkMode ? '#f87171' : '#b91c1c'
     ctx.font = '10px Inter, sans-serif'
     ctx.fillText('CpG Methylation Ratio (0% - 100%)', 6, 14)
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — DATA NOT PARSED')
   }
 
   private static renderVcf({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
@@ -1259,6 +1424,7 @@ export class CanvasTrackRenderer {
 
     ctx.fillStyle = isDarkMode ? '#34d399' : '#047857'
     ctx.font = '10px Inter, sans-serif'
-    ctx.fillText(track.url?.startsWith('local://') ? '📁 Local VCF Variants' : 'SNVs & Indels (1000 Genomes)', 6, 14)
+    ctx.fillText(track.url?.startsWith('local://') ? 'Local VCF Variants' : 'SNVs & Indels (1000 Genomes)', 6, 14)
+    drawStatusBadge(ctx, width, height, isDarkMode, 'simulated', 'SIMULATED — VCF NOT PARSED')
   }
 }

@@ -15,11 +15,11 @@
     <!-- Interactive Cytoband Canvas bar -->
     <div
       ref="containerRef"
-      @click="handleCytobandClick"
       class="relative h-6 rounded-md border cursor-pointer overflow-hidden shadow-inner group transition-colors duration-150"
       :class="themeStore.isDarkMode ? 'bg-slate-950 border-slate-700/80' : 'bg-slate-200 border-slate-300'"
+      @click="handleCytobandClick"
     >
-      <canvas ref="canvasRef" class="w-full h-full block"></canvas>
+      <canvas ref="canvasRef" role="img" :aria-label="`Cytoband diagram of ${genomeStore.viewRegion.chr}`" class="w-full h-full block"></canvas>
 
       <!-- View Range Red Box Overlay -->
       <div

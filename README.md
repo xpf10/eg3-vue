@@ -50,3 +50,31 @@ A high-performance Vue 3 + TypeScript + Vite implementation of the 3rd Generatio
 ```bash
 npm run build
 ```
+
+## ✅ Quality Gates
+
+| Command              | What it does                                              |
+|----------------------|-----------------------------------------------------------|
+| `npm run typecheck`  | `vue-tsc -b` — TypeScript type-check (part of `build`)    |
+| `npm run test`       | Vitest unit tests for the pure logic layers               |
+| `npm run lint`       | ESLint (flat config + Prettier-compatible rules)          |
+| `npm run format`     | Prettier write (`.prettierrc`), `format:check` to verify  |
+
+CI (`.github/workflows/ci.yml`) runs type-check, lint, test and build on every push/PR.
+
+## ⚠️ Data Authenticity
+
+Tracks render **real data** when a parser exists (local/remote BigWig via
+`@gmod/bbi`, parsed BED/GFF/GTF items, live RefGene annotations) and a
+deterministic **simulated fallback** otherwise (BAM / VCF / Hi-C / Synteny /
+MethylC currently have no real parser). The canvas always shows a status pill —
+`SIMULATED DATA`, `LOAD FAILED` or `CONNECTING…` — so demo pixels are never
+mistaken for real signal. Remote BigWig URLs are connected lazily on first
+render; unreachable URLs are reported (not silently faked).
+
+## 🌐 Configuration
+
+- Dev proxy target for the internal ChIP-seq server is configurable via the
+  `VITE_CHIPSEQ_TARGET` environment variable (`http://10.1.20.6:8080` default);
+  `VITE_CHIPSEQ_HOST` selects the host rewritten to `/api-chipseq` on
+  localhost.

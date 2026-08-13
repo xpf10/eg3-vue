@@ -1,9 +1,9 @@
 <template>
   <div class="relative">
     <button
-      @click="isOpen = !isOpen"
       class="flex items-center gap-2 px-3 py-1.5 font-semibold rounded-lg border text-sm transition-all shadow-sm"
       :class="themeStore.isDarkMode ? 'bg-slate-800/90 hover:bg-slate-700/90 text-cyan-400 border-slate-700' : 'bg-white hover:bg-slate-50 text-cyan-700 border-slate-300'"
+      @click="isOpen = !isOpen"
     >
       <Dna :size="16" class="text-cyan-500" />
       <span>{{ genomeStore.currentGenome.name }}</span>
@@ -32,13 +32,13 @@
         <button
           v-for="g in genomeStore.allGenomes"
           :key="g.name"
-          @click="selectGenome(g.name)"
           class="w-full text-left px-3 py-2.5 flex flex-col transition-colors border-b last:border-0"
           :class="[
             g.name === genomeStore.currentGenome.name
               ? (themeStore.isDarkMode ? 'bg-cyan-500/20 text-cyan-400 font-medium' : 'bg-cyan-50 text-cyan-700 font-medium')
               : (themeStore.isDarkMode ? 'text-slate-200 hover:bg-cyan-500/10 hover:text-cyan-300 border-slate-800/50' : 'text-slate-800 hover:bg-slate-50 hover:text-cyan-700 border-slate-100')
           ]"
+          @click="selectGenome(g.name)"
         >
           <div class="flex items-center justify-between">
             <span class="font-mono text-sm font-semibold">{{ g.name }}</span>

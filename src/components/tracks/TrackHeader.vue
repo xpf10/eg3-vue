@@ -7,16 +7,20 @@
       <!-- Move buttons -->
       <div class="flex items-center gap-0.5" :class="themeStore.isDarkMode ? 'text-slate-500' : 'text-slate-400'">
         <button
-          @click="$emit('move-up')"
+          type="button"
           title="Move Up"
+          aria-label="Move track up"
           class="hover:text-cyan-500 p-0.5 rounded transition-colors"
+          @click="$emit('move-up')"
         >
           <ChevronUp :size="14" />
         </button>
         <button
-          @click="$emit('move-down')"
+          type="button"
           title="Move Down"
+          aria-label="Move track down"
           class="hover:text-cyan-500 p-0.5 rounded transition-colors"
+          @click="$emit('move-down')"
         >
           <ChevronDown :size="14" />
         </button>
@@ -24,10 +28,12 @@
 
       <!-- Track Pin toggle -->
       <button
-        @click="trackStore.togglePinTrack(track.id)"
+        type="button"
         :title="track.pinned ? 'Unpin Track' : 'Pin Track to Top'"
+        :aria-label="track.pinned ? 'Unpin track' : 'Pin track to top'"
         class="transition-colors"
         :class="track.pinned ? 'text-cyan-500 font-bold' : (themeStore.isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600')"
+        @click="trackStore.togglePinTrack(track.id)"
       >
         <Pin :size="13" />
       </button>
@@ -59,9 +65,9 @@
       <!-- Display Mode Select -->
       <select
         :value="track.options.displayMode || 'full'"
-        @change="handleDisplayModeChange"
         class="border rounded px-1.5 py-0.5 text-[11px] outline-none font-mono transition-colors"
         :class="themeStore.isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-700 border-slate-300'"
+        @change="handleDisplayModeChange"
       >
         <option value="full">Full</option>
         <option value="dense">Dense</option>
@@ -71,20 +77,24 @@
 
       <!-- Settings button -->
       <button
-        @click="$emit('open-settings')"
+        type="button"
         title="Track Settings & Color"
+        aria-label="Open track settings"
         class="p-1 rounded transition-colors"
         :class="themeStore.isDarkMode ? 'text-slate-400 hover:text-cyan-400 hover:bg-slate-800' : 'text-slate-500 hover:text-cyan-600 hover:bg-slate-200'"
+        @click="$emit('open-settings')"
       >
         <Settings :size="14" />
       </button>
 
       <!-- Toggle Visibility -->
       <button
-        @click="trackStore.toggleTrackVisibility(track.id)"
+        type="button"
         title="Toggle Hide/Show"
+        :aria-label="track.visible !== false ? 'Hide track' : 'Show track'"
         class="p-1 rounded transition-colors"
         :class="themeStore.isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'"
+        @click="trackStore.toggleTrackVisibility(track.id)"
       >
         <Eye v-if="track.visible !== false" :size="14" />
         <EyeOff v-else :size="14" class="opacity-50" />
@@ -92,9 +102,11 @@
 
       <!-- Remove Track button -->
       <button
-        @click="trackStore.removeTrack(track.id)"
+        type="button"
         title="Remove Track"
+        aria-label="Remove track"
         class="p-1 text-slate-400 hover:text-red-500 rounded transition-colors"
+        @click="trackStore.removeTrack(track.id)"
       >
         <Trash2 :size="14" />
       </button>

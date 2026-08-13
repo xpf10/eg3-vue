@@ -1,14 +1,19 @@
 <template>
   <div
     ref="containerRef"
-    @mousemove="handleMouseMove"
-    @mousedown="handleMouseDown"
-    @mouseleave="handleMouseLeave"
     class="relative w-full overflow-hidden group transition-colors duration-150"
     :class="trackClasses"
     :style="{ height: `${track.options.height || 60}px` }"
+    @mousemove="handleMouseMove"
+    @mousedown="handleMouseDown"
+    @mouseleave="handleMouseLeave"
   >
-    <canvas ref="canvasRef" class="w-full h-full block"></canvas>
+    <canvas
+      ref="canvasRef"
+      role="img"
+      :aria-label="`${track.name} genomic track on ${genomeStore.viewRegion.chr}:${genomeStore.viewRegion.start.toLocaleString()}-${genomeStore.viewRegion.end.toLocaleString()}`"
+      class="w-full h-full block"
+    ></canvas>
 
     <div
       v-if="hoverInfo && !isPanning"
@@ -59,6 +64,8 @@ const trackClasses = computed(() => {
 
 
 let resizeObserver: ResizeObserver | null = null
+let disposed = false
+let rafPending = false
 
 function renderCanvas() {
   const canvas = canvasRef.value
@@ -71,9 +78,16 @@ function renderCanvas() {
   const rect = container.getBoundingClientRect()
   const dpr = window.devicePixelRatio || 1
 
-  canvas.width = rect.width * dpr
-  canvas.height = rect.height * dpr
-  ctx.scale(dpr, dpr)
+  // Only resize the backing store when the CSS size actually changed;
+  // re-setting canvas.width every render clears the canvas and resets
+  // the transform for no reason on hot paths (e.g. every pan frame).
+  const targetW = Math.max(1, Math.round(rect.width * dpr))
+  const targetH = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW
+    canvas.height = targetH
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
   CanvasTrackRenderer.render({
     ctx,
@@ -83,7 +97,21 @@ function renderCanvas() {
     track: props.track,
     genome: genomeStore.currentGenome.name,
     isDarkMode: themeStore.isDarkMode,
-    onAsyncUpdate: () => { renderCanvas() }
+    onAsyncUpdate: () => { scheduleRender() }
+  })
+}
+
+/**
+ * Coalesce re-render requests into one paint per animation frame.  Without
+ * this, a pan drag fires one `setRegion` per mousemove and every visible
+ * track re-renders synchronously, which janks with many tracks.
+ */
+function scheduleRender() {
+  if (rafPending || disposed) return
+  rafPending = true
+  requestAnimationFrame(() => {
+    rafPending = false
+    if (!disposed) renderCanvas()
   })
 }
 
@@ -101,7 +129,6 @@ function handleMouseMove(e: MouseEvent) {
 function handleMouseDown(e: MouseEvent) {
   if (!isGeneAnnotation.value) return
   if (!containerRef.value) return
-  const rect = containerRef.value.getBoundingClientRect()
   isPanning.value = true
   panStartX.value = e.clientX
   panStartRegion.value = {
@@ -156,13 +183,21 @@ function handleMouseLeave() {
 onMounted(() => {
   renderCanvas()
   if (containerRef.value) {
-    resizeObserver = new ResizeObserver(() => { renderCanvas() })
+    resizeObserver = new ResizeObserver(() => { scheduleRender() })
     resizeObserver.observe(containerRef.value)
   }
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   if (resizeObserver) resizeObserver.disconnect()
+  // If the component unmounts mid-pan, the window listeners would otherwise
+  // leak (and keep calling setRegion on a dead track).
+  if (isPanning.value) {
+    window.removeEventListener('mousemove', handlePanMove)
+    window.removeEventListener('mouseup', handlePanEnd)
+    isPanning.value = false
+  }
 })
 
 watch(
@@ -174,7 +209,7 @@ watch(
     () => props.track.visible,
     () => themeStore.isDarkMode
   ],
-  () => { renderCanvas() },
+  () => { scheduleRender() },
   { deep: true }
 )
 </script>

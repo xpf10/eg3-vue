@@ -1,7 +1,11 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import path from 'path'
+
+// Internal ChIP-seq server used by the dev proxy.  Override without editing
+// code via VITE_CHIPSEQ_TARGET (e.g. in a local .env or CI secret).
+const chipSeqTarget = process.env.VITE_CHIPSEQ_TARGET || 'http://10.1.20.6:8080'
 
 export default defineConfig({
   plugins: [
@@ -14,9 +18,27 @@ export default defineConfig({
       }
     })
   ],
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+    // Some suites exercise remote-connection failure paths; keep them snappy
+    // but bounded.
+    testTimeout: 15000
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
+    }
+  },
+  build: {
+    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vue/Pinia rarely change; keep them in a stable cacheable chunk.
+          vendor: ['vue', 'pinia']
+        }
+      }
     }
   },
   server: {
@@ -38,7 +60,7 @@ export default defineConfig({
         }
       },
       '/api-chipseq': {
-        target: 'http://10.1.20.6:8080',
+        target: chipSeqTarget,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api-chipseq/, ''),
         timeout: 5000,
@@ -59,7 +81,7 @@ export default defineConfig({
             console.warn('[vite proxy notice] /api-chipseq backend unreachable:', err.message)
             if (res && !res.headersSent && 'writeHead' in res) {
               ;(res as any).writeHead(502, { 'Content-Type': 'text/plain' })
-              ;(res as any).end('Proxy target http://10.1.20.6:8080 is unreachable')
+              ;(res as any).end(`Proxy target ${chipSeqTarget} is unreachable`)
             }
           })
         }

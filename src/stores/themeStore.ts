@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 export const useThemeStore = defineStore('theme', () => {
   const isDarkMode = ref<boolean>(true)
@@ -30,7 +30,9 @@ export const useThemeStore = defineStore('theme', () => {
     applyTheme()
     try {
       localStorage.setItem('eg3_vue_theme', isDarkMode.value ? 'dark' : 'light')
-    } catch (e) {}
+    } catch {
+      /* localStorage unavailable — theme still applies for this session */
+    }
   }
 
   function setTheme(dark: boolean) {
@@ -38,7 +40,9 @@ export const useThemeStore = defineStore('theme', () => {
     applyTheme()
     try {
       localStorage.setItem('eg3_vue_theme', dark ? 'dark' : 'light')
-    } catch (e) {}
+    } catch {
+      /* localStorage unavailable — theme still applies for this session */
+    }
   }
 
   // Initial application
