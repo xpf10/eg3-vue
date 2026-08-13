@@ -193,14 +193,17 @@ export class LocalFileLoader {
 
     const requestUrls: string[] = []
 
+    if (encodeCdnUrl) {
+      requestUrls.push(encodeCdnUrl)
+    }
+
     if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       if (url.includes('10.1.20.6:8080')) {
         requestUrls.push(url.replace(/https?:\/\/10\.1\.20\.6:8080/, '/api-chipseq'))
       }
     }
-    requestUrls.push(url)
-    if (encodeCdnUrl && !requestUrls.includes(encodeCdnUrl)) {
-      requestUrls.push(encodeCdnUrl)
+    if (!requestUrls.includes(url)) {
+      requestUrls.push(url)
     }
 
     if (type === 'bigwig' || url.toLowerCase().includes('.bw') || url.toLowerCase().includes('.bigwig')) {

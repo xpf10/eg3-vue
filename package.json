@@ -13,6 +13,7 @@
     "buffer": "^6.0.3",
     "clsx": "^2.1.1",
     "generic-filehandle": "^3.4.0",
+    "generic-filehandle2": "^2.3.0",
     "jspdf": "^2.5.2",
     "lodash-es": "^4.17.21",
     "lucide-vue-next": "^0.475.0",

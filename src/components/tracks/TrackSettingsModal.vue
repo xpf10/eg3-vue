@@ -64,22 +64,112 @@
             Auto Scale (Dynamic Peak)
           </button>
           <button
-            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'fixed', max: 50 })"
+            @click="trackStore.updateTrackOptions(track.id, { scaleType: 'fixed', yMax: 10, yMin: 0 })"
             class="px-3 py-2 rounded-lg border text-left font-medium transition-colors"
             :class="track.options.scaleType === 'fixed' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'"
           >
-            Fixed Max Scale
+            Fixed Scale
           </button>
         </div>
 
-        <div v-if="track.options.scaleType === 'fixed'" class="mt-2 flex items-center gap-3">
-          <span class="text-slate-400">Fixed Y-Max:</span>
-          <input
-            type="number"
-            :value="track.options.max || 50"
-            @input="updateMaxScale"
-            class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono"
-          />
+        <div v-if="track.options.scaleType === 'fixed'" class="mt-2 flex items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">Y-Min:</span>
+            <input
+              type="number"
+              :value="track.options.yMin ?? 0"
+              @input="updateYMin"
+              class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">Y-Max:</span>
+            <input
+              type="number"
+              :value="track.options.yMax ?? 10"
+              @input="updateYMax"
+              class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Aggregation Method (BigWig) -->
+      <div v-if="track.type === 'bigwig'" class="flex flex-col gap-2">
+        <label class="font-semibold text-slate-300">Aggregation Method</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            v-for="m in aggregateMethodOptions"
+            :key="m"
+            @click="trackStore.updateTrackOptions(track.id, { aggregateMethod: m })"
+            class="px-2 py-1.5 rounded-lg border text-left font-medium transition-colors text-[11px] uppercase"
+            :class="track.options.aggregateMethod === m || (!track.options.aggregateMethod && m === 'mean')
+              ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+              : 'bg-slate-800 border-slate-700 text-slate-400'"
+          >
+            {{ m }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Smoothing (BigWig) -->
+      <div v-if="track.type === 'bigwig'" class="flex flex-col gap-2">
+        <div class="flex justify-between font-semibold text-slate-300">
+          <span>Smoothing</span>
+          <span class="font-mono text-cyan-400">{{ Math.round(track.options.smooth || 0) }}</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          step="1"
+          :value="track.options.smooth || 0"
+          @input="updateSmooth"
+          class="w-full accent-cyan-500 bg-slate-800 h-2 rounded cursor-pointer"
+        />
+        <span class="text-[10px] text-slate-500">0 = off, higher = more blur (moving average window)</span>
+      </div>
+
+      <!-- BigWig Display Mode -->
+      <div v-if="track.type === 'bigwig'" class="flex flex-col gap-2">
+        <label class="font-semibold text-slate-300">BigWig Display Mode</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            v-for="m in bigwigDisplayModeOptions"
+            :key="m"
+            @click="trackStore.updateTrackOptions(track.id, { bigwigDisplayMode: m })"
+            class="px-2 py-1.5 rounded-lg border text-left font-medium transition-colors text-[11px]"
+            :class="track.options.bigwigDisplayMode === m || (!track.options.bigwigDisplayMode && m === 'auto')
+              ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+              : 'bg-slate-800 border-slate-700 text-slate-400'"
+          >
+            {{ m === 'auto' ? 'Auto (bar + heatmap)' : m }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Out-of-Range Colors (BigWig) -->
+      <div v-if="track.type === 'bigwig'" class="flex flex-col gap-2">
+        <label class="font-semibold text-slate-300">Out-of-Range Colors</label>
+        <div class="flex items-center gap-4 flex-wrap">
+          <div class="flex items-center gap-2">
+            <input
+              type="color"
+              :value="track.options.colorAboveMax || '#ef4444'"
+              @input="updateColorAboveMax"
+              class="w-7 h-7 rounded bg-slate-800 border border-slate-700 cursor-pointer outline-none p-0.5"
+            />
+            <span class="text-[11px] text-slate-400">Above Y-Max</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input
+              type="color"
+              :value="track.options.color2BelowMin || '#16a34a'"
+              @input="updateColorBelowMin"
+              class="w-7 h-7 rounded bg-slate-800 border border-slate-700 cursor-pointer outline-none p-0.5"
+            />
+            <span class="text-[11px] text-slate-400">Below Y-Min</span>
+          </div>
         </div>
       </div>
 
@@ -112,7 +202,7 @@
 
 <script setup lang="ts">
 import Modal from '../ui/Modal.vue'
-import { Track, DisplayMode } from '../../types/track'
+import { Track, DisplayMode, AggregateMethod, BigWigDisplayMode } from '../../types/track'
 import { useTrackStore } from '../../stores/trackStore'
 
 const props = defineProps<{
@@ -129,6 +219,9 @@ const colorPresets = [
   '#ef4444', '#06b6d4', '#84cc16', '#6366f1', '#d946ef'
 ]
 
+const aggregateMethodOptions: AggregateMethod[] = ['mean', 'sum', 'count', 'min', 'max']
+const bigwigDisplayModeOptions: BigWigDisplayMode[] = ['auto', 'bar', 'heatmap']
+
 function updateColor(e: Event) {
   if (!props.track) return
   const val = (e.target as HTMLInputElement).value
@@ -141,15 +234,39 @@ function updateHeight(e: Event) {
   trackStore.updateTrackOptions(props.track.id, { height: val })
 }
 
-function updateMaxScale(e: Event) {
-  if (!props.track) return
-  const val = parseFloat((e.target as HTMLInputElement).value)
-  trackStore.updateTrackOptions(props.track.id, { max: val })
-}
-
 function updateDisplayMode(e: Event) {
   if (!props.track) return
   const val = (e.target as HTMLSelectElement).value as DisplayMode
   trackStore.updateTrackOptions(props.track.id, { displayMode: val })
+}
+
+function updateYMin(e: Event) {
+  if (!props.track) return
+  const val = parseFloat((e.target as HTMLInputElement).value)
+  trackStore.updateTrackOptions(props.track.id, { yMin: val })
+}
+
+function updateYMax(e: Event) {
+  if (!props.track) return
+  const val = parseFloat((e.target as HTMLInputElement).value)
+  trackStore.updateTrackOptions(props.track.id, { yMax: val })
+}
+
+function updateSmooth(e: Event) {
+  if (!props.track) return
+  const val = parseInt((e.target as HTMLInputElement).value, 10)
+  trackStore.updateTrackOptions(props.track.id, { smooth: val })
+}
+
+function updateColorAboveMax(e: Event) {
+  if (!props.track) return
+  const val = (e.target as HTMLInputElement).value as string
+  trackStore.updateTrackOptions(props.track.id, { colorAboveMax: val })
+}
+
+function updateColorBelowMin(e: Event) {
+  if (!props.track) return
+  const val = (e.target as HTMLInputElement).value as string
+  trackStore.updateTrackOptions(props.track.id, { color2BelowMin: val })
 }
 </script>

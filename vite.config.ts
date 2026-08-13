@@ -26,12 +26,23 @@ export default defineConfig({
       '/api-washu': {
         target: 'https://lambda.epigenomegateway.org',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-washu/, '')
+        rewrite: (path) => path.replace(/^\/api-washu/, ''),
+        configure: (proxy) => {
+          proxy.on('error', (err, _req, res) => {
+            console.warn('[vite proxy notice] /api-washu backend unreachable:', err.message)
+            if (res && !res.headersSent && 'writeHead' in res) {
+              ;(res as any).writeHead(502, { 'Content-Type': 'text/plain' })
+              ;(res as any).end('Proxy target https://lambda.epigenomegateway.org is unreachable')
+            }
+          })
+        }
       },
       '/api-chipseq': {
         target: 'http://10.1.20.6:8080',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api-chipseq/, ''),
+        timeout: 5000,
+        proxyTimeout: 5000,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq, req) => {
             if (req.headers.range) {
@@ -43,6 +54,13 @@ export default defineConfig({
             proxyRes.headers['access-control-allow-headers'] = 'Range, Content-Type, Authorization'
             proxyRes.headers['access-control-allow-methods'] = 'GET, HEAD, OPTIONS'
             proxyRes.headers['access-control-expose-headers'] = 'Content-Range, Content-Length, Accept-Ranges'
+          })
+          proxy.on('error', (err, _req, res) => {
+            console.warn('[vite proxy notice] /api-chipseq backend unreachable:', err.message)
+            if (res && !res.headersSent && 'writeHead' in res) {
+              ;(res as any).writeHead(502, { 'Content-Type': 'text/plain' })
+              ;(res as any).end('Proxy target http://10.1.20.6:8080 is unreachable')
+            }
           })
         }
       }

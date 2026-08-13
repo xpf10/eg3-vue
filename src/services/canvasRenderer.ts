@@ -1,4 +1,4 @@
-import { Track } from '../types/track'
+import { Track, AggregateMethod, BigWigDisplayMode } from '../types/track'
 import { GenomicRegion } from '../types/region'
 import { SAMPLE_GENES, GeneInfo } from '../data/sampleGenes'
 import { fetchRealRefGeneData, normalizeGeneTrackName, ParsedGeneFeature } from './trackDataFetcher'
@@ -31,6 +31,46 @@ function getTrackSeed(track: Track): number {
     hash |= 0
   }
   return Math.abs(hash) || 101
+}
+
+/**
+ * Simple moving-average smoothing of a Float64Array in place.
+ * Equivalent to eg3's `array-smooth` utility, using a centred window of size
+ * `window` and zero-padding at the edges.
+ */
+function smoothMovingAverage(arr: Float64Array, window: number): void {
+  const n = arr.length
+  if (n === 0 || window < 1) return
+  if (window === 1) return
+  const half = Math.floor(window / 2)
+  const out = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    let sum = 0
+    let count = 0
+    for (let k = -half; k <= half; k++) {
+      const idx = i + k
+      if (idx >= 0 && idx < n) {
+        sum += arr[idx]
+        count++
+      }
+    }
+    out[i] = sum / count
+  }
+  arr.set(out)
+}
+
+/**
+ * Convert a hex color string (#rgb, #rrggbb, or rrggbb) to an RGBA string
+ * with the given alpha (0–1).  Used for heatmap-style opacity-mapped bars.
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace(/^#/, '')
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h
+  const r = parseInt(full.substring(0, 2), 16)
+  const g = parseInt(full.substring(2, 4), 16)
+  const b = parseInt(full.substring(4, 6), 16)
+  const a = Math.max(0, Math.min(1, alpha))
+  return `rgba(${r},${g},${b},${a})`
 }
 
 export const realGeneCache = new Map<string, ParsedGeneFeature[]>()
@@ -191,9 +231,7 @@ export class CanvasTrackRenderer {
         return
       } else {
         LocalFileLoader.getBigWigSignalFeatures(track.bwInstance, fetchRegion, width, downsample).then(features => {
-          if (features && features.length > 0) {
-            bwSignalCache.set(cacheKey, features)
-          }
+          bwSignalCache.set(cacheKey, features || [])
           if (onAsyncUpdate) onAsyncUpdate()
         })
       }
@@ -276,70 +314,189 @@ export class CanvasTrackRenderer {
     downsample = DownsamplingChoices.ALL
   ) {
     const span = Math.max(1, region.end - region.start + 1)
-    let maxScore = 1
 
+    // --- Configuration defaults (mirroring eg3 NumericalTrack DEFAULT_OPTIONS) ---
+    const aggregateMethod: AggregateMethod = options.aggregateMethod || 'mean'
+    const smoothStrength = typeof options.smooth === 'number' ? options.smooth : (options.smooth ? 2 : 0)
+    const yMax = options.yMax
+    const yMin = options.yMin
+    const colorAboveMax = options.colorAboveMax || '#ef4444'
+    const color2BelowMin = options.color2BelowMin || '#16a34a'
+    const displayMode: BigWigDisplayMode = options.bigwigDisplayMode || 'auto'
+    const AUTO_HEATMAP_THRESHOLD = 21
+
+    let effectiveDisplayMode = displayMode
+    if (displayMode === 'auto' && height < AUTO_HEATMAP_THRESHOLD) {
+      effectiveDisplayMode = 'heatmap'
+    }
+
+    // --- Compute value range across all features ---
+    let maxScore = -Infinity
+    let minScore = Infinity
     features.forEach(f => {
       if (f.score > maxScore) maxScore = f.score
+      if (f.score < minScore) minScore = f.score
     })
+    if (!isFinite(maxScore)) maxScore = 1
+    if (!isFinite(minScore)) minScore = 0
 
-    const maxScale = options.scaleType === 'fixed' && options.max ? options.max : maxScore
+    // --- D3-style scaleLinear: value → pixel Y ---
+    // FIXED scale uses [yMin, yMax]; AUTO uses the natural data range.
+    // Range maps domainMin → bottom (height-2), domainMax → top (2).
+    const useFixedScale = options.scaleType === 'fixed' && yMax !== undefined && yMin !== undefined
+    const scaleDomainMin = useFixedScale ? yMin : Math.min(0, minScore)
+    const scaleDomainMax = useFixedScale ? yMax : Math.max(0, maxScore)
+    const scaleRange = Math.max(0.001, scaleDomainMax - scaleDomainMin)
 
-    ctx.fillStyle = mainColor + (isDarkMode ? '44' : '33')
-    ctx.strokeStyle = mainColor
-    ctx.lineWidth = 1.5
+    const yForValue = (val: number): number => {
+      const t = Math.max(0, Math.min(1, (val - scaleDomainMin) / scaleRange))
+      return (height - 2) - t * (height - 4)
+    }
+    const isAboveMax = (val: number): boolean => val > scaleDomainMax
+    const isBelowMin = (val: number): boolean => val < scaleDomainMin
+    const zeroY = yForValue(0)
 
-    if (features.length > 0) {
-      ctx.beginPath()
-      ctx.moveTo(0, height)
+    // --- Split features by sign: positive = forward (above zero),
+    // negative = reverse (below zero) — matching eg3 NumericalTrack's
+    // xToFeaturesForward / xToFeaturesReverse separation. ---
+    const forwardFeatures = features.filter(f => f.score >= 0)
+    const reverseFeatures = features.filter(f => f.score < 0)
 
-      if (downsample === DownsamplingChoices.SAMPLE) {
-        // Bucket features by canvas column of the visible viewport so we
-        // never draw more bars than there are pixels (DownsamplingChoices
-        // .SAMPLE, eg3 reference).  Only features that overlap the visible
-        // region contribute; the flank only affects the fetch width, not
-        // the drawing coordinate frame.
-        const buckets: { sum: number; count: number }[] = []
-        for (let i = 0; i < width; i++) buckets.push({ sum: 0, count: 0 })
-
-        features.forEach(f => {
-          if (f.end < region.start || f.start > region.end) return
-          const fStart = Math.max(region.start, f.start)
-          const fEnd = Math.min(region.end, f.end)
-          const x1 = Math.max(0, Math.floor(((fStart - region.start) / span) * width))
-          const x2 = Math.min(width - 1, Math.floor(((fEnd - region.start) / span) * width))
-          for (let x = x1; x <= x2; x++) {
-            buckets[x].sum += f.score
-            buckets[x].count++
-          }
-        })
-
-        buckets.forEach((b, x) => {
-          if (b.count === 0) return
-          const score = b.sum / b.count
-          const h = Math.min(height - 2, (score / maxScale) * (height - 6))
-          ctx.fillRect(x, height - h, 1, h)
-        })
-      } else {
-        // DownsamplingChoices.ALL — draw every feature.
-        features.forEach(f => {
-          const x1 = ((f.start - region.start) / span) * width
-          const x2 = ((f.end - region.start) / span) * width
-          const w = Math.max(1, x2 - x1)
-          const h = Math.min(height - 2, (f.score / maxScale) * (height - 6))
-          ctx.fillRect(x1, height - h, w, h)
-        })
+    // --- Aggregation helpers (eg3 DefaultAggregators) ---
+    const aggregate = (scores: number[]): number => {
+      if (scores.length === 0) return 0
+      switch (aggregateMethod) {
+        case 'sum':   return scores.reduce((s, v) => s + v, 0)
+        case 'count': return scores.length
+        case 'min':   return Math.min(...scores)
+        case 'max':   return Math.max(...scores)
+        case 'mean':
+        default:      return scores.reduce((s, v) => s + v, 0) / scores.length
       }
     }
 
+    // --- Compute per-pixel value arrays (forward and reverse) ---
+    const fwdPixels = new Float64Array(width)
+    const revPixels = new Float64Array(width)
+
+    if (features.length > 0) {
+      if (downsample === DownsamplingChoices.SAMPLE) {
+        // Bucket features by canvas column, then aggregate per bucket.
+        // Eg3 DownsamplingChoices.SAMPLE behaviour: one aggregated value
+        // per pixel, using the configured AggregateMethod.
+        const fwdBuckets: number[][] = []
+        const revBuckets: number[][] = []
+        for (let i = 0; i < width; i++) { fwdBuckets.push([]); revBuckets.push([]) }
+
+        const processBucket = (feat: { start: number; end: number; score: number }, buckets: number[][]) => {
+          if (feat.end < region.start || feat.start > region.end) return
+          const fStart = Math.max(region.start, feat.start)
+          const fEnd = Math.min(region.end, feat.end)
+          const x1 = Math.max(0, Math.floor(((fStart - region.start) / span) * width))
+          const x2 = Math.min(width - 1, Math.floor(((fEnd - region.start) / span) * width))
+          for (let x = x1; x <= x2; x++) buckets[x].push(feat.score)
+        }
+
+        forwardFeatures.forEach(f => processBucket(f, fwdBuckets))
+        reverseFeatures.forEach(f => processBucket(f, revBuckets))
+
+        for (let x = 0; x < width; x++) {
+          if (fwdBuckets[x].length > 0) fwdPixels[x] = aggregate(fwdBuckets[x])
+          if (revBuckets[x].length > 0) revPixels[x] = aggregate(revBuckets[x])
+        }
+      } else {
+        // DownsamplingChoices.ALL — each feature maps directly to its pixel range.
+        // For overlapping features the last one wins (matches eg3 behaviour).
+        const mapFeatureToPixels = (feat: { start: number; end: number; score: number }, out: Float64Array) => {
+          if (feat.end < region.start || feat.start > region.end) return
+          const fStart = Math.max(region.start, feat.start)
+          const fEnd = Math.min(region.end, feat.end)
+          const x1 = Math.max(0, Math.floor(((fStart - region.start) / span) * width))
+          const x2 = Math.min(width - 1, Math.floor(((fEnd - region.start) / span) * width))
+          for (let x = x1; x <= x2; x++) out[x] = feat.score
+        }
+        forwardFeatures.forEach(f => mapFeatureToPixels(f, fwdPixels))
+        reverseFeatures.forEach(f => mapFeatureToPixels(f, revPixels))
+      }
+
+      // --- Smoothing: simple moving average (eg3 uses array-smooth) ---
+      if (smoothStrength > 0) {
+        smoothMovingAverage(fwdPixels, Math.max(1, Math.round(smoothStrength)))
+        smoothMovingAverage(revPixels, Math.max(1, Math.round(smoothStrength)))
+      }
+
+      // --- Render ---
+      if (effectiveDisplayMode === 'heatmap') {
+        // Heatmap: full-height bars with opacity mapped to |value|/scaleRange.
+        // Eg3 AUTO_HEATMAP_THRESHOLD behaviour for small track heights.
+        for (let x = 0; x < width; x++) {
+          if (fwdPixels[x] !== 0) {
+            const val = fwdPixels[x]
+            const t = Math.min(1, Math.abs(val) / scaleRange)
+            const opacity = 0.15 + t * 0.85
+            const color = isAboveMax(val) ? colorAboveMax : mainColor
+            ctx.fillStyle = hexToRgba(color, opacity)
+            ctx.fillRect(x, 2, 1, height - 4)
+          }
+          if (revPixels[x] !== 0) {
+            const val = revPixels[x]
+            const t = Math.min(1, Math.abs(val) / scaleRange)
+            const opacity = 0.15 + t * 0.85
+            const color = isBelowMin(val) ? color2BelowMin : mainColor
+            ctx.fillStyle = hexToRgba(color, opacity)
+            ctx.fillRect(x, 2, 1, height - 4)
+          }
+        }
+      } else {
+        // Bar mode: histogram bars. Forward bars extend upward from zero
+        // line; reverse bars extend downward from zero line. Eg3 NumericalTrack
+        // draws xToValue (forward) above zero and xToValue2 (reverse) below.
+        ctx.fillStyle = mainColor
+        for (let x = 0; x < width; x++) {
+          if (fwdPixels[x] !== 0) {
+            const val = fwdPixels[x]
+            const barY = yForValue(val)
+            const barH = Math.max(1, zeroY - barY)
+            if (barH > 0) {
+              ctx.fillStyle = isAboveMax(val) ? colorAboveMax : mainColor
+              ctx.fillRect(x, barY, 1, barH)
+            }
+          }
+          if (revPixels[x] !== 0) {
+            const val = revPixels[x]
+            const barY = yForValue(val)
+            const barH = Math.max(1, barY - zeroY)
+            if (barH > 0) {
+              ctx.fillStyle = isBelowMin(val) ? color2BelowMin : mainColor
+              ctx.fillRect(x, zeroY, 1, barH)
+            }
+          }
+        }
+      }
+
+      // Zero-line reference
+      ctx.strokeStyle = isDarkMode ? 'rgba(148,163,184,0.25)' : 'rgba(71,85,105,0.25)'
+      ctx.lineWidth = 0.5
+      ctx.beginPath()
+      ctx.moveTo(0, zeroY)
+      ctx.lineTo(width, zeroY)
+      ctx.stroke()
+    }
+
+    // --- Labels ---
     const isRemote = track.url && !track.url.startsWith('local://')
-    const mode = downsample === DownsamplingChoices.SAMPLE ? ' (downsampled)' : ''
+    const dsLabel = downsample === DownsamplingChoices.SAMPLE ? ' (downsampled)' : ''
     ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
     ctx.font = '10px Inter, sans-serif'
     ctx.fillText(
-      `${isRemote ? '🌐 HTTP Byte-Range Streamed' : '📁 Parsed Local BigWig'} (${features.length} features, max: ${maxScale.toFixed(1)})${mode}`,
+      `${isRemote ? '🌐 HTTP Byte-Range Streamed' : '📁 Parsed Local BigWig'} (${features.length} features, max: ${scaleDomainMax.toFixed(1)})${dsLabel}`,
       6,
       12
     )
+    if (useFixedScale) {
+      ctx.fillStyle = isDarkMode ? '#94a3b8' : '#475569'
+      ctx.fillText(`[fixed ${yMin}–${yMax}]`, width - 120, 12)
+    }
   }
 
   private static renderGeneAnnotation(rc: RenderContext) {
@@ -396,19 +553,51 @@ export class CanvasTrackRenderer {
     }
 
     const geneSymbol = track.name || items[0]?.name || 'Gene'
+    const displayMode = track.options.displayMode || 'full'
 
-    const cdsHeight = 10
-    const utrHeight = 4
+    // --- Mode 1: DENSE (Collapsed single-line view) ---
+    if (displayMode === 'dense') {
+      const yMid = height / 2 + 2
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(0, yMid)
+      ctx.lineTo(width, yMid)
+      ctx.stroke()
+
+      visible.forEach(it => {
+        const exons = it.exons || [{ start: it.start, end: it.end }]
+        exons.forEach((ex: any) => {
+          const ex1 = ((ex.start - region.start) / span) * width
+          const ex2 = ((ex.end - region.start) / span) * width
+          ctx.fillStyle = color
+          ctx.fillRect(ex1, yMid - 4, Math.max(2, ex2 - ex1), 8)
+        })
+      })
+
+      ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
+      ctx.font = 'bold 10px Inter, sans-serif'
+      ctx.fillText(`Transcripts · ${geneSymbol} [Dense Mode: ${visible.length} variants merged]`, 6, 13)
+      return
+    }
+
+    let cdsHeight = 10
+    let utrHeight = 4
+    let rowH = 22
+
+    if (displayMode === 'squish') {
+      cdsHeight = 4
+      utrHeight = 2
+      rowH = 10
+    } else if (displayMode === 'pack') {
+      cdsHeight = 7
+      utrHeight = 3
+      rowH = 15
+    }
+
     const BLOCK_MIN_W = 3
+    const rowsBudget = Math.min(visible.length, Math.max(1, Math.floor((height - 18) / rowH)))
 
-    // Base the row budget on whichever is smaller: the number of visible
-    // transcripts, or what the canvas height can accommodate.
-    const rowsBudget = Math.min(visible.length, Math.max(2, Math.floor((height - 18) / (cdsHeight + 8))))
-    const rowH = (height - 18) / Math.max(rowsBudget, 1)
-
-    // --- Overlap-avoiding row assignment (eg3 FeatureArranger._assignRows) ---
-    // Convert each transcript to draw-space bounds, then assign rows so no
-    // two overlapping transcripts share a row.
     interface Placed {
       it: any
       xStart: number
@@ -421,7 +610,7 @@ export class CanvasTrackRenderer {
       xEnd: Math.min(width, ((it.end - region.start) / span) * width)
     }))
 
-    const rowMaxX: number[] = [] // rightmost occupied x for each row
+    const rowMaxX: number[] = []
     for (const p of placed) {
       const row = rowMaxX.findIndex(mx => mx < p.xStart)
       if (row !== -1) {
@@ -433,12 +622,10 @@ export class CanvasTrackRenderer {
       }
     }
 
-    // Only render up to the row budget; excess rows would not fit the track.
     const rendered = placed.filter(p => p.row !== undefined && p.row < rowsBudget)
     const rowsUsed = Math.min(rowsBudget, rowMaxX.length)
     const usableWidth = width - 4
 
-    // Draw a faint baseline grid for the track rows.
     ctx.strokeStyle = isDarkMode ? '#1e293b66' : '#f1f5f9'
     ctx.lineWidth = 0.5
     for (let r = 0; r < rowsUsed; r++) {
@@ -449,7 +636,6 @@ export class CanvasTrackRenderer {
       ctx.stroke()
     }
 
-    // --- Draw each placed transcript ---
     for (const p of rendered) {
       const row = p.row!
       const yTop = 16 + row * rowH + (rowH - cdsHeight) / 2
@@ -459,7 +645,6 @@ export class CanvasTrackRenderer {
       const x2 = Math.max(0, Math.min(usableWidth, p.xEnd))
       const range = x2 - x1
 
-      // Backbone line.
       if (range > 0) {
         ctx.strokeStyle = tColor
         ctx.lineWidth = 1
@@ -469,7 +654,6 @@ export class CanvasTrackRenderer {
         ctx.stroke()
       }
 
-      // Exons: thick CDS block + thin UTR blocks.
       const exons = p.it.exons || [{ start: p.it.start, end: p.it.end }]
       for (const ex of exons) {
         const exX1 = Math.max(0, Math.min(usableWidth, ((ex.start - region.start) / span) * width))
@@ -481,30 +665,25 @@ export class CanvasTrackRenderer {
           const cdsX1 = Math.max(0, Math.min(usableWidth, ((ex.cdsStart - region.start) / span) * width))
           const cdsX2 = Math.max(0, Math.min(usableWidth, ((ex.cdsEnd - region.start) / span) * width))
 
-          // 5' UTR (left of CDS within this exon)
           if (exX1 < cdsX1) {
             ctx.fillStyle = tColor + (isDarkMode ? 'cc' : 'aa')
             ctx.fillRect(exX1, yTop + (cdsHeight - utrHeight) / 2, Math.max(BLOCK_MIN_W, cdsX1 - exX1), utrHeight)
           }
-          // CDS block
           if (cdsX2 > cdsX1) {
             ctx.fillStyle = tColor
             ctx.fillRect(cdsX1, yTop, Math.max(BLOCK_MIN_W, cdsX2 - cdsX1), cdsHeight)
           }
-          // 3' UTR (right of CDS within this exon)
           if (cdsX2 < exX2) {
             ctx.fillStyle = tColor + (isDarkMode ? 'cc' : 'aa')
             ctx.fillRect(cdsX2, yTop + (cdsHeight - utrHeight) / 2, Math.max(BLOCK_MIN_W, exX2 - cdsX2), utrHeight)
           }
         } else {
-          // No CDS (lncRNA / pseudogene) or no UTR data — draw the whole exon as UTR.
           ctx.fillStyle = tColor + (isDarkMode ? 'cc' : 'aa')
           ctx.fillRect(exX1, yTop + (cdsHeight - utrHeight) / 2, exW, utrHeight)
         }
       }
 
-      // 5' / 3' arrowhead at the terminal end.
-      if (range > 16) {
+      if (range > 16 && displayMode !== 'squish') {
         const termX = p.it.strand === '-' ? x1 : x2
         const dir = p.it.strand === '+' ? 1 : -1
         ctx.beginPath()
@@ -516,22 +695,16 @@ export class CanvasTrackRenderer {
         ctx.fill()
       }
 
-      // Eg3-style label placement: left / right / on-top.
-      this.drawTranscriptLabel(ctx, geneSymbol, p.it.id || `T${placed.indexOf(p) + 1}`, p.it.strand, x1, x2, yMid, isDarkMode, usableWidth)
+      if (displayMode !== 'squish') {
+        this.drawTranscriptLabel(ctx, geneSymbol, p.it.id || `T${placed.indexOf(p) + 1}`, p.it.strand, x1, x2, yMid, isDarkMode, usableWidth)
+      }
     }
 
     ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
     ctx.font = 'bold 10px Inter, sans-serif'
-    ctx.fillText(`Transcripts · ${geneSymbol} (${visible.length} variant${visible.length > 1 ? 's' : ''})`, 6, 13)
+    ctx.fillText(`Transcripts · ${geneSymbol} [${displayMode.toUpperCase()}: ${rendered.length}/${visible.length} variants]`, 6, 13)
   }
 
-  /**
-   * Place a gene/transcript label the way eg3 does it:
-   * - Left of the transcript start if there's horizontal room.
-   * - Right of the transcript end otherwise.
-   * - On top of the annotation with a background rect for contrast if both
-   *   sides are blocked.
-   */
   private static drawTranscriptLabel(
     ctx: CanvasRenderingContext2D,
     gene: string,
@@ -547,7 +720,6 @@ export class CanvasTrackRenderer {
     ctx.font = 'bold 10px Inter, sans-serif'
     const leftText = `${gene} ${strand}`
     const labelW = ctx.measureText(leftText).width + 6
-    const txW = ctx.measureText(txId).width + 6
 
     const textColor = isDarkMode ? '#f8fafc' : '#0f172a'
     ctx.fillStyle = textColor
@@ -564,7 +736,6 @@ export class CanvasTrackRenderer {
       ctx.fillText(leftText, xEnd + 3, yMid + 3)
       ctx.textAlign = 'left'
     } else {
-      // On-top with background rect for contrast (eg3 labelHasBackground).
       const w = ctx.measureText(leftText).width + 6
       ctx.fillStyle = isDarkMode ? '#0b1220cc' : '#ffffffcc'
       ctx.fillRect(xStart, yMid - 9, w, 12)
@@ -577,7 +748,6 @@ export class CanvasTrackRenderer {
       ctx.textAlign = 'left'
     }
 
-    // Transcript ID (right-hand column), in a muted tone.
     ctx.fillStyle = isDarkMode ? '#94a3b8' : '#64748b'
     ctx.font = '10px Fira Code, monospace'
     ctx.textAlign = 'right'
@@ -585,17 +755,44 @@ export class CanvasTrackRenderer {
     ctx.textAlign = 'left'
   }
 
-  /** A small palette for transcript rows — cycles for readability. */
   private static hashColor(idx: number, isDarkMode: boolean): string {
-    const dark = ['#22d3ee','#a78bfa','#f472b6','#34d399','#fbbf24','#60a5fa','#f87171']
-    const light = ['#0891b2','#7c3aed','#be185d','#059669','#d97706','#2563eb','#dc2626']
+    const dark = [
+      '#38bdf8', // Cyan/Sky
+      '#a78bfa', // Purple/Violet
+      '#f472b6', // Pink
+      '#34d399', // Emerald/Green
+      '#fbbf24', // Amber/Yellow
+      '#60a5fa', // Blue
+      '#f87171', // Red
+      '#fb923c', // Orange
+      '#4ade80', // Light Green
+      '#c084fc'  // Lavender
+    ]
+    const light = [
+      '#0284c7', // Cyan/Sky
+      '#7c3aed', // Purple
+      '#be185d', // Pink
+      '#059669', // Emerald
+      '#d97706', // Amber
+      '#2563eb', // Blue
+      '#dc2626', // Red
+      '#ea580c', // Orange
+      '#16a34a', // Green
+      '#9333ea'  // Violet
+    ]
     const set = isDarkMode ? dark : light
-    return set[idx % set.length]
+    return set[Math.abs(idx) % set.length]
   }
 
-  /**
-   * Generic refGene annotation track (no per-gene transcript items).
-   */
+  private static getGeneColor(geneName: string, geneIdx: number, isDarkMode: boolean): string {
+    let hash = 0
+    for (let i = 0; i < geneName.length; i++) {
+      hash = (hash << 5) - hash + geneName.charCodeAt(i)
+      hash |= 0
+    }
+    return this.hashColor(Math.abs(hash) + geneIdx, isDarkMode)
+  }
+
   private static renderRefGeneAnnotation(
     rc: RenderContext,
     color: string,
@@ -658,35 +855,113 @@ export class CanvasTrackRenderer {
       return
     }
 
-    const rowHeight = 22
-    const maxRows = Math.max(2, Math.floor((height - 10) / rowHeight))
-    const visibleGenes = genes.slice(0, maxRows)
+    const displayMode = track.options.displayMode || 'full'
 
-    visibleGenes.forEach((gene, idx) => {
-      const yMid = 18 + idx * rowHeight
+    // --- Mode 1: DENSE (Single collapsed line) ---
+    if (displayMode === 'dense') {
+      const yMid = height / 2 + 2
+      ctx.strokeStyle = isDarkMode ? '#334155' : '#cbd5e1'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(0, yMid)
+      ctx.lineTo(width, yMid)
+      ctx.stroke()
+
+      genes.forEach((gene, gIdx) => {
+        const geneColor = this.getGeneColor(gene.name, gIdx, isDarkMode)
+        const exons = gene.exons || [{ start: gene.start, end: gene.end }]
+        exons.forEach(exon => {
+          const ex1 = ((exon.start - region.start) / span) * width
+          const ex2 = ((exon.end - region.start) / span) * width
+          const exW = Math.max(2, ex2 - ex1)
+          ctx.fillStyle = geneColor
+          ctx.fillRect(ex1, yMid - 5, exW, 10)
+        })
+      })
+
+      ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
+      ctx.font = 'bold 10px Inter, sans-serif'
+      ctx.fillText(`Dense Gene View (${genes.length} Genes Collapsed)`, width - 210, 13)
+      return
+    }
+
+    // --- Modes: FULL, PACK, SQUISH ---
+    let rowHeight = 24
+    let exonHalfH = 5
+    let topMargin = 18
+    let showLabels = true
+    let fontStr = 'bold 11px Inter, sans-serif'
+
+    if (displayMode === 'squish') {
+      rowHeight = 10
+      exonHalfH = 2
+      topMargin = 14
+      showLabels = false
+      fontStr = '9px Inter, sans-serif'
+    } else if (displayMode === 'pack') {
+      rowHeight = 15
+      exonHalfH = 3.5
+      topMargin = 16
+      showLabels = true
+      fontStr = '10px Inter, sans-serif'
+    }
+
+    interface PlacedGene {
+      gene: GeneInfo
+      xStart: number
+      xEnd: number
+      row: number
+    }
+    const placedGenes: PlacedGene[] = []
+    const rowRightmostX: number[] = []
+
+    genes.forEach(gene => {
       const x1 = ((gene.start - region.start) / span) * width
       const x2 = ((gene.end - region.start) / span) * width
+      ctx.font = fontStr
+      const labelW = showLabels ? ctx.measureText(`${gene.name} (${gene.strand})`).width + 12 : 6
+      const xEndWithLabel = x2 + labelW
 
-      ctx.strokeStyle = color
+      let row = rowRightmostX.findIndex(maxX => maxX < x1)
+      if (row !== -1) {
+        rowRightmostX[row] = xEndWithLabel
+      } else {
+        row = rowRightmostX.length
+        rowRightmostX.push(xEndWithLabel)
+      }
+      placedGenes.push({ gene, xStart: x1, xEnd: x2, row })
+    })
+
+    const maxRows = Math.max(1, Math.floor((height - topMargin) / rowHeight))
+    const visiblePlaced = placedGenes.filter(p => p.row < maxRows)
+
+    visiblePlaced.forEach((p, geneIdx) => {
+      const { gene, xStart: x1, xEnd: x2, row } = p
+      const yMid = topMargin + row * rowHeight + rowHeight / 2
+      const geneColor = this.getGeneColor(gene.name, geneIdx, isDarkMode)
+
+      ctx.strokeStyle = geneColor
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.moveTo(Math.max(0, x1), yMid)
       ctx.lineTo(Math.min(width, x2), yMid)
       ctx.stroke()
 
-      ctx.fillStyle = color
-      for (let ax = Math.max(0, x1) + 15; ax < Math.min(width, x2); ax += 35) {
-        ctx.beginPath()
-        if (gene.strand === '+') {
-          ctx.moveTo(ax - 3, yMid - 3)
-          ctx.lineTo(ax + 3, yMid)
-          ctx.lineTo(ax - 3, yMid + 3)
-        } else {
-          ctx.moveTo(ax + 3, yMid - 3)
-          ctx.lineTo(ax - 3, yMid)
-          ctx.lineTo(ax + 3, yMid + 3)
+      if (displayMode !== 'squish') {
+        ctx.fillStyle = geneColor
+        for (let ax = Math.max(0, x1) + 15; ax < Math.min(width, x2); ax += 35) {
+          ctx.beginPath()
+          if (gene.strand === '+') {
+            ctx.moveTo(ax - 3, yMid - 3)
+            ctx.lineTo(ax + 3, yMid)
+            ctx.lineTo(ax - 3, yMid + 3)
+          } else {
+            ctx.moveTo(ax + 3, yMid - 3)
+            ctx.lineTo(ax - 3, yMid)
+            ctx.lineTo(ax + 3, yMid + 3)
+          }
+          ctx.stroke()
         }
-        ctx.stroke()
       }
 
       const exons = gene.exons || [{ start: gene.start, end: gene.end }]
@@ -694,24 +969,69 @@ export class CanvasTrackRenderer {
         const ex1 = ((exon.start - region.start) / span) * width
         const ex2 = ((exon.end - region.start) / span) * width
         const exW = Math.max(2, ex2 - ex1)
-        ctx.fillStyle = color
-        ctx.fillRect(ex1, yMid - 5, exW, 10)
-        ctx.strokeStyle = isDarkMode ? '#ffffff44' : '#00000022'
-        ctx.lineWidth = 0.5
-        ctx.strokeRect(ex1, yMid - 5, exW, 10)
+        ctx.fillStyle = geneColor
+        ctx.fillRect(ex1, yMid - exonHalfH, exW, exonHalfH * 2)
+        if (displayMode === 'full') {
+          ctx.strokeStyle = isDarkMode ? '#ffffff44' : '#00000022'
+          ctx.lineWidth = 0.5
+          ctx.strokeRect(ex1, yMid - exonHalfH, exW, exonHalfH * 2)
+        }
       })
 
-      ctx.fillStyle = isDarkMode ? '#f8fafc' : '#0f172a'
-      ctx.font = 'bold 11px Inter, sans-serif'
-      const labelX = Math.max(8, Math.min(width - 90, x1))
-      ctx.fillText(`${gene.name} (${gene.strand})`, labelX, yMid - 7)
+      if (showLabels) {
+        ctx.fillStyle = isDarkMode ? '#f8fafc' : '#0f172a'
+        ctx.font = fontStr
+        const labelX = Math.max(8, Math.min(width - 90, x1))
+        ctx.fillText(`${gene.name} (${gene.strand})`, labelX, yMid - exonHalfH - 2)
+      }
     })
+
+    if (displayMode !== 'full') {
+      ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
+      ctx.font = '10px Inter, sans-serif'
+      ctx.fillText(`${displayMode.toUpperCase()} Mode (${visiblePlaced.length}/${genes.length} Genes)`, width - 180, 13)
+    }
   }
 
   private static renderBed({ ctx, width, height, region, track, isDarkMode = true }: RenderContext) {
     const color = track.options.color || (isDarkMode ? '#06b6d4' : '#0891b2')
     const span = Math.max(1, region.end - region.start + 1)
     const seed = getTrackSeed(track)
+    const displayMode = track.options.displayMode || 'full'
+
+    if (displayMode === 'dense') {
+      const yMid = height / 2
+      ctx.fillStyle = color
+
+      const localItems = track.items as ParsedLocalBedItem[] | undefined
+      if (localItems && Array.isArray(localItems) && localItems.length > 0) {
+        const normChr = region.chr.toLowerCase()
+        const overlapping = localItems.filter(item =>
+          item.chr.toLowerCase() === normChr && item.end >= region.start && item.start <= region.end
+        )
+        overlapping.forEach(item => {
+          const x1 = ((item.start - region.start) / span) * width
+          const x2 = ((item.end - region.start) / span) * width
+          ctx.fillStyle = item.color || color
+          ctx.fillRect(x1, yMid - 4, Math.max(2, x2 - x1), 8)
+        })
+        ctx.fillStyle = isDarkMode ? '#34d399' : '#059669'
+        ctx.font = '10px Inter, sans-serif'
+        ctx.fillText(`Dense Bed View (${overlapping.length} Loci)`, width - 160, 14)
+        return
+      }
+
+      const blockCount = 6 + (seed % 5)
+      const blockSize = Math.floor(span / blockCount)
+      for (let i = 0; i < blockCount; i++) {
+        const bStart = region.start + i * blockSize + ((i + seed) % 2 === 0 ? 5000 : 18000)
+        const bEnd = bStart + Math.floor(blockSize * 0.35)
+        const x1 = ((bStart - region.start) / span) * width
+        const x2 = ((bEnd - region.start) / span) * width
+        ctx.fillRect(x1, yMid - 4, Math.max(2, x2 - x1), 8)
+      }
+      return
+    }
 
     const localItems = track.items as ParsedLocalBedItem[] | undefined
     if (localItems && Array.isArray(localItems) && localItems.length > 0) {
